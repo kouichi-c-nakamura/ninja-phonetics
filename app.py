@@ -30,7 +30,6 @@ if "current_audio_bytes" not in st.session_state:
 if "last_recorded_bytes" not in st.session_state: st.session_state.last_recorded_bytes = None
 if "auto_play" not in st.session_state: st.session_state.auto_play = False
 
-if "e2_category" not in st.session_state: st.session_state.e2_category = "passage"
 if "e2_selected_passage" not in st.session_state: st.session_state.e2_selected_passage = "P1_northwind"
 if "e2_custom_text" not in st.session_state:
     st.session_state.e2_custom_text = E2_PASSAGE_BENCHMARKS["P1_northwind"]["target_text"]
@@ -116,61 +115,28 @@ if st.session_state.app_mode == "RL":
             """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# E2 モード
+# E2 モード (長文ベンチマーク専用)
 # -------------------------------------------------------------
 else:
-    sub_t1, sub_t2, _ = st.columns([1.4, 1.4, 3.2])
-    with sub_t1:
-        if st.button("短文フォーカス・ドリル (S1〜S3)", type="primary" if st.session_state.e2_category == "drill" else "secondary", use_container_width=True):
-            if st.session_state.e2_category != "drill":
-                st.session_state.e2_category = "drill"
-                st.session_state.e2_selected_passage = "S1_stress"
-                t_txt = E2_PASSAGE_BENCHMARKS["S1_stress"]["target_text"]
-                st.session_state.e2_custom_text = st.session_state.e2_last_analyzed_text = st.session_state["e2_text_input_widget"] = t_txt
-                st.session_state.e2_eval_history, st.session_state.e2_audio_bytes = [], None
-                st.rerun()
-    with sub_t2:
-        if st.button("総合アセスメント (長文・標準規格)", type="primary" if st.session_state.e2_category == "passage" else "secondary", use_container_width=True):
-            if st.session_state.e2_category != "passage":
-                st.session_state.e2_category = "passage"
-                st.session_state.e2_selected_passage = "P1_northwind"
-                t_txt = E2_PASSAGE_BENCHMARKS["P1_northwind"]["target_text"]
-                st.session_state.e2_custom_text = st.session_state.e2_last_analyzed_text = st.session_state["e2_text_input_widget"] = t_txt
-                st.session_state.e2_eval_history, st.session_state.e2_audio_bytes = [], None
-                st.rerun()
-
-    if st.session_state.e2_category == "drill":
-        d_col1, d_col2, d_col3, _ = st.columns([1.2, 1.2, 1.2, 2.4])
-        for col, key, lbl in [(d_col1, "S1_stress", "S1: 語彙強弱拍"), (d_col2, "S2_clusters", "S2: 子音連結保持"), (d_col3, "S3_connected", "S3: 機能語弱化")]:
-            with col:
-                if st.button(lbl, type="primary" if st.session_state.e2_selected_passage == key else "secondary", use_container_width=True):
-                    st.session_state.e2_selected_passage = key
-                    t_txt = E2_PASSAGE_BENCHMARKS[key]["target_text"]
-                    st.session_state.e2_custom_text = st.session_state.e2_last_analyzed_text = st.session_state["e2_text_input_widget"] = t_txt
-                    st.session_state.e2_eval_history = []
-                    st.rerun()
-    else:
-        p_col1, p_col2, p_col3, _ = st.columns([1.3, 1.3, 1.3, 2.1])
-        with p_col1:
-            if st.button("P1: 北風と太陽 (113語)", type="primary" if st.session_state.e2_selected_passage == "P1_northwind" else "secondary", use_container_width=True):
-                st.session_state.e2_selected_passage = "P1_northwind"
-                t_txt = E2_PASSAGE_BENCHMARKS["P1_northwind"]["target_text"]
-                st.session_state.e2_custom_text = st.session_state.e2_last_analyzed_text = st.session_state["e2_text_input_widget"] = t_txt
-                st.session_state.e2_eval_history = []
-                st.rerun()
-        with p_col2: st.button("P2: 虹のパッセージ", disabled=True, use_container_width=True)
-        with p_col3: st.button("P3: 祖父のパッセージ", disabled=True, use_container_width=True)
+    p_col1, p_col2, p_col3, _ = st.columns([1.3, 1.3, 1.3, 2.1])
+    with p_col1:
+        if st.button("P1: 北風と太陽 (113語)", type="primary" if st.session_state.e2_selected_passage == "P1_northwind" else "secondary", use_container_width=True):
+            st.session_state.e2_selected_passage = "P1_northwind"
+            t_txt = E2_PASSAGE_BENCHMARKS["P1_northwind"]["target_text"]
+            st.session_state.e2_custom_text = st.session_state.e2_last_analyzed_text = st.session_state["e2_text_input_widget"] = t_txt
+            st.session_state.e2_eval_history = []
+            st.rerun()
+    with p_col2: st.button("P2: 虹のパッセージ", disabled=True, use_container_width=True)
+    with p_col3: st.button("P3: 祖父のパッセージ", disabled=True, use_container_width=True)
 
     active_bm = E2_PASSAGE_BENCHMARKS[st.session_state.e2_selected_passage]
 
     txt_col1, txt_col2 = st.columns([4.8, 1.0], vertical_alignment="bottom")
     with txt_col1:
-        # 高さを従来の2倍に拡大 (長文: 170px, 短文: 110px)
-        th = 170 if st.session_state.e2_category == "passage" else 110
         user_target_text = st.text_area(
             "課題テキスト (自由に書き換え可能)", 
             value=st.session_state.e2_custom_text, 
-            height=th, 
+            height=170, 
             key="e2_text_input_widget"
         )
     with txt_col2:
@@ -204,7 +170,7 @@ else:
             st.session_state.e2_audio_bytes = active_bytes
 
             audio_arr, sr = decode_audio_bytes(active_bytes)
-            tmp_wav = f"tmp_e2_active.wav"
+            tmp_wav = "tmp_e2_active.wav"
             sf.write(tmp_wav, audio_arr, sr, format="WAV")
 
             eval_res = evaluate_user_rhythm(tmp_wav, st.session_state.e2_selected_passage, st.session_state.e2_custom_text)

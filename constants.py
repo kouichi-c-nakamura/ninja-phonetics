@@ -78,47 +78,8 @@ PRESETS = [
     }
 ]
 
-# E2 ベンチマーク定義
+# E2 ベンチマーク定義（長文標準パッセージ専用）
 E2_PASSAGE_BENCHMARKS = {
-    "S1_stress": {
-        "category": "drill",
-        "x_metric": "pct_v",
-        "title": "短文ドリル 1: 語彙強弱拍 (Alternating Stress & Reduction)",
-        "target_text": "A photograph of a famous photographer was taken in the station.",
-        "phonetics_desc": "photograph と photographer の強弱母音コントラストを測定。弱母音(/ə/)の鋭い短縮が不可欠です。",
-        "mu": np.array([47.01, 58.61]),
-        "cov": np.array([[1.45, 3.12], [3.12, 45.0]]),
-        "x_range": (41.0, 58.0),
-        "y_range": (35.0, 110.0),
-        "ref_audio": "benchmarks/S1_stress/UK-Native/UK-Native_01_ArcherConver_male.wav",
-        "bm_csv": "benchmarks/benchmark_results_all.csv"
-    },
-    "S2_clusters": {
-        "category": "drill",
-        "x_metric": "pct_v",
-        "title": "短文ドリル 2: 子音連結保持 (Consonant Clusters)",
-        "target_text": "Strict instructors asked complex questions about the project tests.",
-        "phonetics_desc": "連続子音に不要な母音を挟まずに子音を保持できるかを診断します。",
-        "mu": np.array([35.85, 59.12]),
-        "cov": np.array([[1.80, 2.85], [2.85, 52.0]]),
-        "x_range": (30.0, 46.0),
-        "y_range": (35.0, 120.0),
-        "ref_audio": "benchmarks/S2_clusters/US-Native/US-Native_01_RogerLaidBac_male.wav",
-        "bm_csv": "benchmarks/benchmark_results_all.csv"
-    },
-    "S3_connected": {
-        "category": "drill",
-        "x_metric": "pct_v",
-        "title": "短文ドリル 3: 機能語弱化 (Connected Speech Weakening)",
-        "target_text": "Can you give him a cup of water from the kitchen at lunch?",
-        "phonetics_desc": "機能語を極小化し、息の流れに乗せるテストです。",
-        "mu": np.array([45.42, 45.18]),
-        "cov": np.array([[1.60, 1.95], [1.95, 42.0]]),
-        "x_range": (38.0, 54.0),
-        "y_range": (30.0, 140.0),
-        "ref_audio": "benchmarks/S3_connected/UK-Native/UK-Native_01_ArcherConver_male.wav",
-        "bm_csv": "benchmarks/benchmark_results_all.csv"
-    },
     "P1_northwind": {
         "category": "passage",
         "x_metric": "rcf",
