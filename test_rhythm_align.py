@@ -12,11 +12,13 @@ from g2p_en import G2p
 
 # 初回のみNLTKリソースが必要な場合のフォールバック
 import nltk
+nltk.data.path.append("/tmp/nltk_data")
 try:
     nltk.data.find('taggers/averaged_perceptron_tagger_eng')
 except LookupError:
-    nltk.download('averaged_perceptron_tagger_eng', quiet=True)
-    nltk.download('cmudict', quiet=True)
+    os.makedirs("/tmp/nltk_data", exist_ok=True)
+    nltk.download('averaged_perceptron_tagger_eng', download_dir="/tmp/nltk_data", quiet=True)
+    nltk.download('cmudict', download_dir="/tmp/nltk_data", quiet=True)
 
 # お題スクリプト
 DEFAULT_SCRIPT = "A photograph of a famous photographer was taken in the station."
