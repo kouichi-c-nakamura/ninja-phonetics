@@ -7,15 +7,24 @@ import soundfile as sf
 import streamlit as st
 import streamlit.components.v1 as components
 
-from constants import PRESETS, PRESET_DIR, E2_PASSAGE_BENCHMARKS
+from constants import (
+    PRESETS,
+    PRESET_DIR,
+    B1_PRESET_DIR,
+    B1_WORD_PRESETS,
+    B1_PASSAGE_BENCHMARK,
+    E2_PASSAGE_BENCHMARKS,
+)
 from ui_styles import SHURIKEN_ICON_MAIN, SHURIKEN_ICON_SM, APP_CUSTOM_CSS
 from audio_processing import (
     decode_audio_bytes,
     extract_scope_data_from_bytes,
+    extract_b1_sibilant_data_from_bytes,
     evaluate_user_rhythm,
-    get_benchmark_word_raw_distributions
+    get_benchmark_word_raw_distributions,
 )
 from views_a1 import build_spike2_html
+from views_b1 import build_b1_scope_html
 from views_e2 import build_e2_multiview_canvas_html, build_clickable_word_map_html
 
 st.set_page_config(page_title="NinjaPhonetics: Biofeedback Scope", layout="wide", initial_sidebar_state="collapsed")
@@ -31,6 +40,23 @@ if "current_audio_bytes" not in st.session_state:
 if "last_recorded_bytes" not in st.session_state: st.session_state.last_recorded_bytes = None
 if "auto_play" not in st.session_state: st.session_state.auto_play = False
 
+# B1 セッション状態初期化
+if "b1_word_label" not in st.session_state: st.session_state.b1_word_label = "お手本: See (US)"
+if "b1_target_word" not in st.session_state: st.session_state.b1_target_word = "see"
+if "b1_word_audio_bytes" not in st.session_state:
+    b1_init_w = os.path.join(B1_PRESET_DIR, "see_us.wav")
+    st.session_state.b1_word_audio_bytes = open(b1_init_w, "rb").read() if os.path.exists(b1_init_w) else None
+if "b1_word_last_rec" not in st.session_state: st.session_state.b1_word_last_rec = None
+if "b1_word_auto_play" not in st.session_state: st.session_state.b1_word_auto_play = False
+
+if "b1_twister_label" not in st.session_state: st.session_state.b1_twister_label = "お手本: US Native (Roger)"
+if "b1_twister_audio_bytes" not in st.session_state:
+    b1_init_t = B1_PASSAGE_BENCHMARK["us_audio"]
+    st.session_state.b1_twister_audio_bytes = open(b1_init_t, "rb").read() if os.path.exists(b1_init_t) else None
+if "b1_twister_last_rec" not in st.session_state: st.session_state.b1_twister_last_rec = None
+if "b1_twister_auto_play" not in st.session_state: st.session_state.b1_twister_auto_play = False
+
+# E2 セッション状態初期化
 if "e2_selected_passage" not in st.session_state: st.session_state.e2_selected_passage = "P1_northwind"
 if "e2_custom_text" not in st.session_state:
     st.session_state.e2_custom_text = E2_PASSAGE_BENCHMARKS["P1_northwind"]["target_text"]
@@ -48,11 +74,14 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-tab_m1, tab_m2, _ = st.columns([1.5, 1.5, 3.0])
+tab_m1, tab_m2, tab_m3, _ = st.columns([1.45, 1.55, 1.55, 1.45])
 with tab_m1:
-    if st.button("A1: 音素ホルマント・スコープ (R / L)", type="primary" if st.session_state.app_mode == "RL" else "secondary", use_container_width=True):
+    if st.button("A1: 音素ホルマント (R / L)", type="primary" if st.session_state.app_mode == "RL" else "secondary", use_container_width=True):
         st.session_state.app_mode = "RL"; st.rerun()
 with tab_m2:
+    if st.button("B1: 歯擦音スコープ (/si/ vs /ʃi/)", type="primary" if st.session_state.app_mode == "SIBILANT" else "secondary", use_container_width=True):
+        st.session_state.app_mode = "SIBILANT"; st.rerun()
+with tab_m3:
     if st.button("E2: プロソディ＆ストレス拍診断", type="primary" if st.session_state.app_mode == "RHYTHM" else "secondary", use_container_width=True):
         st.session_state.app_mode = "RHYTHM"; st.rerun()
 
@@ -122,7 +151,6 @@ if st.session_state.app_mode == "RL":
         st.session_state.auto_play = False
         components.html(html_code, height=590, scrolling=False)
 
-        # 選択中プリセットの解説カード表示
         if active_preset_info and active_preset_info.get("desc"):
             st.markdown(f"""
             <div style="background: #0F172A; border: 1px solid #1E293B; border-left: 4px solid #38BDF8; border-radius: 8px; padding: 12px 18px; margin-top: 6px;">
@@ -137,6 +165,214 @@ if st.session_state.app_mode == "RL":
               </div>
             </div>
             """, unsafe_allow_html=True)
+
+# -------------------------------------------------------------
+# B1 モード (/si/ vs /ʃi/ 歯擦音スペクトル重心スコープ)
+# -------------------------------------------------------------
+elif st.session_state.app_mode == "SIBILANT":
+    sub_word, sub_twister = st.tabs([
+        "1. 単語キャリブレーション (/si/ vs /ʃi/ 単音比較)",
+        "2. 早口言葉チャレンジ (She sells seashells)"
+    ])
+
+    # === Subtab 1: 単語キャリブレーション ===
+    with sub_word:
+        row1_presets = B1_WORD_PRESETS[:9]   # US / UK 英語 9種
+        row2_presets = B1_WORD_PRESETS[9:]   # JP カタカナトラップ 4種
+
+        b1_preset_clicked = False
+        active_b1_info = None
+
+        cols_r1 = st.columns(len(row1_presets))
+        for idx, col in enumerate(cols_r1):
+            p_info = row1_presets[idx]
+            is_act = (st.session_state.b1_word_label == f"お手本: {p_info['label']}")
+            if is_act:
+                active_b1_info = p_info
+            if col.button(p_info["label"], key=f"b1_r1_{idx}", type="primary" if is_act else "secondary", use_container_width=True):
+                fpath = os.path.join(B1_PRESET_DIR, p_info["file"])
+                if os.path.exists(fpath):
+                    with open(fpath, "rb") as f:
+                        st.session_state.b1_word_audio_bytes = f.read()
+                        st.session_state.b1_word_label = f"お手本: {p_info['label']}"
+                        st.session_state.b1_target_word = p_info["target_word"]
+                        st.session_state["b1_word_input"] = p_info["target_word"]
+                        st.session_state.b1_word_auto_play = True
+                    b1_preset_clicked = True
+                    st.rerun()
+
+        cols_r2 = st.columns([1.2, 1.2, 1.2, 1.2, 4.2])
+        for idx, p_info in enumerate(row2_presets):
+            is_act = (st.session_state.b1_word_label == f"お手本: {p_info['label']}")
+            if is_act:
+                active_b1_info = p_info
+            if cols_r2[idx].button(p_info["label"], key=f"b1_r2_{idx}", type="primary" if is_act else "secondary", use_container_width=True):
+                fpath = os.path.join(B1_PRESET_DIR, p_info["file"])
+                if os.path.exists(fpath):
+                    with open(fpath, "rb") as f:
+                        st.session_state.b1_word_audio_bytes = f.read()
+                        st.session_state.b1_word_label = f"お手本: {p_info['label']}"
+                        st.session_state.b1_target_word = p_info["target_word"]
+                        st.session_state["b1_word_input"] = p_info["target_word"]
+                        st.session_state.b1_word_auto_play = True
+                    b1_preset_clicked = True
+                    st.rerun()
+
+        b1_in1, b1_in2 = st.columns([1.3, 2.7], vertical_alignment="bottom")
+        with b1_in1:
+            b1_typed = st.text_input(
+                "1. 発音する単語を入力 (see, she, seat, sheet, sip, ship, city...)",
+                value=st.session_state.b1_target_word,
+                placeholder="例: see, she, seat, sheet, city...",
+                key="b1_word_input"
+            )
+            st.session_state.b1_target_word = b1_typed.strip()
+
+        has_b1_word = bool(st.session_state.b1_target_word)
+        with b1_in2:
+            b1_rec_label = (
+                f"2. 「{st.session_state.b1_target_word}」を録音してCOG解析"
+                if has_b1_word
+                else "2. ⬅ 先に左欄へ発音する英単語を入力すると録音可能になります"
+            )
+            b1_audio_in = st.audio_input(b1_rec_label, disabled=not has_b1_word, key="b1_word_audio_in")
+
+        if not b1_preset_clicked and b1_audio_in is not None and has_b1_word:
+            new_b1_bytes = b1_audio_in.read()
+            if new_b1_bytes != st.session_state.b1_word_last_rec:
+                st.session_state.b1_word_last_rec = new_b1_bytes
+                st.session_state.b1_word_audio_bytes = new_b1_bytes
+                st.session_state.b1_word_label = f"あなたの発音録音: {st.session_state.b1_target_word}"
+                st.session_state.b1_word_auto_play = False
+
+        if st.session_state.b1_word_audio_bytes is not None:
+            b1_data = extract_b1_sibilant_data_from_bytes(
+                st.session_state.b1_word_audio_bytes,
+                target_text=st.session_state.b1_target_word,
+                is_passage=False
+            )
+            b1_sum = b1_data["summary"]
+
+            hdr_c1, hdr_c2 = st.columns([2.2, 1.8])
+            with hdr_c1:
+                st.markdown(f"<div class='sec-header'>{SHURIKEN_ICON_SM} 表示中: <span style='color: #F8FAFC;'>{st.session_state.b1_word_label}</span></div>", unsafe_allow_html=True)
+            with hdr_c2:
+                st.markdown(
+                    f"<div style='text-align:right; padding-top:4px;'>"
+                    f"<span style='background:#0F172A; border:1px solid {b1_sum['color']}; color:{b1_sum['color']}; "
+                    f"padding:3px 10px; border-radius:6px; font-weight:800; font-size:0.88rem;'>"
+                    f"{b1_sum['verdict']} ({b1_sum['mean_s_cog']:.0f} Hz)</span></div>",
+                    unsafe_allow_html=True
+                )
+
+            clean_b1_name = re.sub(r'[^a-zA-Z0-9_\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', '_', st.session_state.b1_word_label).strip('_')
+            b1_html = build_b1_scope_html(b1_data, auto_play=st.session_state.b1_word_auto_play, export_name=clean_b1_name or "b1_word", scope_height=510)
+            st.session_state.b1_word_auto_play = False
+            components.html(b1_html, height=570, scrolling=False)
+
+            st.markdown(f"""
+            <div style="background: #0F172A; border: 1px solid #1E293B; border-left: 4px solid {b1_sum['color']}; border-radius: 8px; padding: 12px 18px; margin-top: 4px;">
+              <div style="font-size: 0.90rem; color: #F8FAFC; font-weight: 700; margin-bottom: 4px;">
+                💡 音響診断: {b1_sum['advice']}
+              </div>
+              <div style="font-size: 0.85rem; color: #94A3B8; line-height: 1.45;">
+                {active_b1_info.get('desc', '') if active_b1_info else '目標: /s/ は 5,500 Hz 以上の緑色ゾーン、/ʃ/ は 3,200〜4,600 Hz の青色ゾーンへ明確に分離します。'}
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # === Subtab 2: 早口言葉チャレンジ (She sells seashells) ===
+    with sub_twister:
+        st.markdown(f"""
+        <div style="background: #0F172A; border: 1px solid #1E293B; border-left: 4px solid #10B981; border-radius: 8px; padding: 12px 18px; margin-bottom: 10px;">
+          <div style="font-size: 0.78rem; font-weight: 700; color: #10B981; text-transform: uppercase; letter-spacing: 0.05em;">
+            COARTICULATION STRESS TEST (/s/ ↔ /ʃ/ ALTERNATION)
+          </div>
+          <div style="font-size: 1.18rem; font-weight: 800; color: #F8FAFC; margin: 4px 0;">
+            “{B1_PASSAGE_BENCHMARK['target_text']}”
+          </div>
+          <div style="font-size: 0.85rem; color: #94A3B8; font-family: monospace;">
+            {B1_PASSAGE_BENCHMARK['ipa_guide']}
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        tw_b1, tw_b2, tw_b3, tw_rec_col = st.columns([1.0, 1.0, 1.1, 2.9], vertical_alignment="bottom")
+        tw_clicked = False
+        with tw_b1:
+            if st.button("US お手本", key="b1_tw_us", type="primary" if "US Native" in st.session_state.b1_twister_label else "secondary", use_container_width=True):
+                if os.path.exists(B1_PASSAGE_BENCHMARK["us_audio"]):
+                    st.session_state.b1_twister_audio_bytes = open(B1_PASSAGE_BENCHMARK["us_audio"], "rb").read()
+                    st.session_state.b1_twister_label = "お手本: US Native (Roger)"
+                    st.session_state.b1_twister_auto_play = True
+                    tw_clicked = True
+                    st.rerun()
+        with tw_b2:
+            if st.button("UK お手本", key="b1_tw_uk", type="primary" if "UK Native" in st.session_state.b1_twister_label else "secondary", use_container_width=True):
+                if os.path.exists(B1_PASSAGE_BENCHMARK["uk_audio"]):
+                    st.session_state.b1_twister_audio_bytes = open(B1_PASSAGE_BENCHMARK["uk_audio"], "rb").read()
+                    st.session_state.b1_twister_label = "お手本: UK Native (Archer)"
+                    st.session_state.b1_twister_auto_play = True
+                    tw_clicked = True
+                    st.rerun()
+        with tw_b3:
+            if st.button("JP カタカナ比較", key="b1_tw_jp", type="primary" if "JP Katakana" in st.session_state.b1_twister_label else "secondary", use_container_width=True):
+                if os.path.exists(B1_PASSAGE_BENCHMARK["jp_audio"]):
+                    st.session_state.b1_twister_audio_bytes = open(B1_PASSAGE_BENCHMARK["jp_audio"], "rb").read()
+                    st.session_state.b1_twister_label = "比較: JP Katakana (シー・セルズ...)"
+                    st.session_state.b1_twister_auto_play = True
+                    tw_clicked = True
+                    st.rerun()
+        with tw_rec_col:
+            tw_audio_in = st.audio_input("上の2文を読み上げて /s/ ↔ /ʃ/ の分離落差を計測", key="b1_twister_audio_in")
+
+        if not tw_clicked and tw_audio_in is not None:
+            new_tw_bytes = tw_audio_in.read()
+            if new_tw_bytes != st.session_state.b1_twister_last_rec:
+                st.session_state.b1_twister_last_rec = new_tw_bytes
+                st.session_state.b1_twister_audio_bytes = new_tw_bytes
+                st.session_state.b1_twister_label = "あなたの早口言葉録音"
+                st.session_state.b1_twister_auto_play = False
+
+        if st.session_state.b1_twister_audio_bytes is not None:
+            tw_data = extract_b1_sibilant_data_from_bytes(
+                st.session_state.b1_twister_audio_bytes,
+                target_text=B1_PASSAGE_BENCHMARK["target_text"],
+                is_passage=True
+            )
+            tw_sum = tw_data["summary"]
+
+            m_c1, m_c2, m_c3, m_c4 = st.columns(4)
+            m_c1.metric("総合判定", tw_sum["verdict"])
+            m_c2.metric("平均 /s/ COG (目標 ≥5.5k)", f"{tw_sum['mean_s_cog']:.0f} Hz")
+            m_c3.metric("平均 /ʃ/ COG (目標 3.2-4.6k)", f"{tw_sum['mean_sh_cog']:.0f} Hz")
+            m_c4.metric("分離落差 ΔCOG (目標 ≥1.6k)", f"+{tw_sum['sep_delta']:.0f} Hz")
+
+            tw_html = build_b1_scope_html(tw_data, auto_play=st.session_state.b1_twister_auto_play, export_name="b1_seashells", scope_height=480)
+            st.session_state.b1_twister_auto_play = False
+            components.html(tw_html, height=540, scrolling=False)
+
+            st.markdown(f"""
+            <div style="background: #0F172A; border: 1px solid #1E293B; border-left: 4px solid {tw_sum['color']}; border-radius: 8px; padding: 10px 16px; margin-bottom: 10px; font-size: 0.90rem; color: #F8FAFC;">
+              💡 <b>鋸歯状（ノコギリ波）COG 診断:</b> {tw_sum['advice']}
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 全歯擦音トークンの個別実測カード
+            tokens = tw_data.get("sibilant_tokens", [])
+            if tokens:
+                st.markdown("<div style='font-size:0.9rem; font-weight:700; color:#BAE6FD; margin-bottom:6px;'>全歯擦音トークン別 COG スコアカード (/s/ vs /ʃ/ の切り替え精度)</div>", unsafe_allow_html=True)
+                cards_html = '<div style="display:flex; flex-wrap:wrap; gap:8px;">'
+                for tk in tokens:
+                    cards_html += (
+                        f'<div style="background:#0F172A; border:1px solid {tk["color"]}; border-radius:6px; padding:6px 10px; min-width:115px;">'
+                        f'<div style="font-size:11px; color:#94A3B8;">{tk["word"]} <span style="color:#E2E8F0; font-weight:700;">/{tk["ipa"]}/</span></div>'
+                        f'<div style="font-size:14px; font-weight:800; color:{tk["color"]}; font-variant-numeric:tabular-nums;">{tk["cog_hz"]:.0f} Hz</div>'
+                        f'<div style="font-size:10px; font-weight:700; color:{tk["color"]};">{tk["status"]}</div>'
+                        f'</div>'
+                    )
+                cards_html += "</div>"
+                st.markdown(cards_html, unsafe_allow_html=True)
 
 # -------------------------------------------------------------
 # E2 モード (長文ベンチマーク専用)
@@ -181,14 +417,12 @@ else:
         e2_input = st.audio_input("この英文を録音してプロソディ診断を実行", key="e2_audio_in")
         e2_uploaded_file = st.file_uploader("または音声ファイルをアップロード (WAV / MP3 / M4A)", type=["wav", "mp3", "m4a"], key="e2_file_in")
 
-        # 録音・アップロードデータの抽出
         active_bytes = None
         if e2_input is not None:
             active_bytes = e2_input.getvalue()
         elif e2_uploaded_file is not None:
             active_bytes = e2_uploaded_file.getvalue()
 
-        # 新規データが届いた場合のみ解析を実行
         if active_bytes and active_bytes != st.session_state.get("e2_last_seen_bytes"):
             st.session_state["e2_last_seen_bytes"] = active_bytes
             st.session_state.e2_audio_bytes = active_bytes
@@ -304,7 +538,6 @@ th {{ position: sticky; top: 0; background: #0F172A; color: #94A3B8; font-size: 
             st.markdown("<div style='font-size: 0.9rem; font-weight: bold; color: #94A3B8; margin-top: 8px; margin-bottom: 4px;'>ネイティブお手本音声</div>", unsafe_allow_html=True)
             with open(active_bm["ref_audio"], "rb") as rf: st.audio(rf.read(), format="audio/wav")
 
-    # 最下段：発話実測マップ
     if st.session_state.e2_eval_history and st.session_state.e2_audio_bytes:
         latest_wb = st.session_state.e2_eval_history[-1].get("word_breakdown", [])
         trial_num = len(st.session_state.e2_eval_history)

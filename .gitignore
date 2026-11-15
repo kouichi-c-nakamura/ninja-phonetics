@@ -35,18 +35,14 @@ wheels/
 # 音声テスト・録音一時ファイル (NinjaPhonetics特有)
 # ==========================================
 # 録音テストで生成される一時音声ファイル
-*.wav
-*.mp3
-*.m4a
-*.ogg
+# 実行時に生成される一時音声ファイルのみ除外（presets/ や benchmarks/ のお手本音声は追跡する）
+tmp_*.wav
+tmp_*.mp3
+tmp_*.m4a
+tmp_*.ogg
 temp_test.wav
 temp/
 recordings/
-
-# presets ディレクトリ配下の音声ファイルはトラッキング対象にする
-!presets/*.wav
-!presets/*.mp3
-!presets/*.m4a
 
 # PlotlyのHTML出力・エクスポート画像
 *.html
