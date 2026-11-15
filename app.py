@@ -24,6 +24,7 @@ st.markdown(APP_CUSTOM_CSS, unsafe_allow_html=True)
 # セッション状態初期化
 if "app_mode" not in st.session_state: st.session_state.app_mode = "RL"
 if "current_label" not in st.session_state: st.session_state.current_label = "お手本: Right (US)"
+if "a1_target_word" not in st.session_state: st.session_state.a1_target_word = "right"
 if "current_audio_bytes" not in st.session_state:
     init_path = os.path.join("presets", "right_us.wav")
     st.session_state.current_audio_bytes = open(init_path, "rb").read() if os.path.exists(init_path) else None
@@ -75,17 +76,37 @@ if st.session_state.app_mode == "RL":
                 with open(fpath, "rb") as f:
                     st.session_state.current_audio_bytes = f.read()
                     st.session_state.current_label = f"お手本: {p_info['label']}"
+                    st.session_state.a1_target_word = p_info.get("target_word", "right")
+                    st.session_state["a1_word_input"] = st.session_state.a1_target_word
                     st.session_state.auto_play = True
                 preset_clicked = True
                 st.rerun()
 
-    audio_input = st.audio_input("または自分の声を録音して解析 (R / L)")
-    if not preset_clicked and audio_input is not None:
+    in_col1, in_col2 = st.columns([1.3, 2.7], vertical_alignment="bottom")
+    with in_col1:
+        typed_word = st.text_input(
+            "1. 発音する英単語を入力 (音素境界を自動検出)",
+            value=st.session_state.a1_target_word,
+            placeholder="例: right, light, really, very...",
+            key="a1_word_input"
+        )
+        st.session_state.a1_target_word = typed_word.strip()
+
+    has_target_word = bool(st.session_state.a1_target_word)
+    with in_col2:
+        rec_label = (
+            f"2. 「{st.session_state.a1_target_word}」を録音して解析 (R / L)"
+            if has_target_word
+            else "2. ⬅ 先に左欄へ発音する英単語を入力すると録音可能になります"
+        )
+        audio_input = st.audio_input(rec_label, disabled=not has_target_word, key="a1_audio_in")
+
+    if not preset_clicked and audio_input is not None and has_target_word:
         new_bytes = audio_input.read()
         if new_bytes != st.session_state.last_recorded_bytes:
             st.session_state.last_recorded_bytes = new_bytes
             st.session_state.current_audio_bytes = new_bytes
-            st.session_state.current_label = "あなたの発音録音"
+            st.session_state.current_label = f"あなたの発音録音: {st.session_state.a1_target_word}"
             st.session_state.auto_play = False
 
     if st.session_state.current_audio_bytes is not None:
@@ -93,7 +114,10 @@ if st.session_state.app_mode == "RL":
             st.markdown(f"<div class='sec-header'>{SHURIKEN_ICON_SM} 表示中: <span style='color: #F8FAFC;'>{st.session_state.current_label}</span></div>", unsafe_allow_html=True)
 
         clean_name = re.sub(r'[^a-zA-Z0-9_\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', '_', st.session_state.current_label).strip('_')
-        scope_data = extract_scope_data_from_bytes(st.session_state.current_audio_bytes)
+        scope_data = extract_scope_data_from_bytes(
+            st.session_state.current_audio_bytes,
+            target_text=st.session_state.a1_target_word
+        )
         html_code = build_spike2_html(scope_data, auto_play=st.session_state.auto_play, export_name=clean_name or "sample")
         st.session_state.auto_play = False
         components.html(html_code, height=590, scrolling=False)

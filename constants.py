@@ -9,6 +9,7 @@ PRESETS = [
     {
         "label": "Right (US)",
         "file": "right_us.wav",
+        "target_word": "right",
         "title": "Right /raɪt/ (US)",
         "phonetics": "/r/ のくびれ (谷)",
         "desc": "語頭でF3が急降下してF2に接近し、差分ライン(Δ)が1000Hz破線より深く潜り込みます。舌の両側面を上顎の奥歯に密着させることでこの深い谷が生まれます。"
@@ -16,6 +17,7 @@ PRESETS = [
     {
         "label": "Right (UK)",
         "file": "right_uk.wav",
+        "target_word": "right",
         "title": "Right /raɪt/ (UK)",
         "phonetics": "/r/ の狭窄",
         "desc": "語頭でF3が急降下して1000Hz基準線を下回ります。その後の二重母音 /aɪ/ への移行部でF2が右肩上がりに上昇します。"
@@ -23,6 +25,7 @@ PRESETS = [
     {
         "label": "Light (US)",
         "file": "light_us.wav",
+        "target_word": "light",
         "title": "Light /laɪt/ (US)",
         "phonetics": "Dark L（軟口蓋化）による低F2・高Δ",
         "desc": "米語の語頭 /l/ は奥舌が引かれるため（Dark L傾向）、開始部で F2（緑）が 1200Hz 付近と低く、F3（青）との差分（Δ）が 2500Hz 以上に大きく開くのが特徴です。"
@@ -30,6 +33,7 @@ PRESETS = [
     {
         "label": "Light (UK)",
         "file": "light_uk.wav",
+        "target_word": "light",
         "title": "Light /laɪt/ (UK)",
         "phonetics": "F3高域維持 (Clear L)",
         "desc": "語頭の /l/ でF3は2700〜2800Hzの高域にとどまり、差分(Δ)は1000Hzを割らずに推移します。"
@@ -37,6 +41,7 @@ PRESETS = [
     {
         "label": "White (UK)",
         "file": "white_uk.wav",
+        "target_word": "white",
         "title": "White /waɪt/ (UK)",
         "phonetics": "円唇によるF2低下",
         "desc": "語頭で唇を丸めるためF2が一時的に下がりますが、F3は下がらないため、差分ラインはRのようなくびれになりません。"
@@ -44,6 +49,7 @@ PRESETS = [
     {
         "label": "ライト (JP)",
         "file": "raito_jp.wav",
+        "target_word": "raito",
         "title": "日本語「ライト」/ɾaɪto/",
         "phonetics": "タップ破裂と語尾母音付加",
         "desc": "「ラ」で瞬間的な弾き音（破裂）が起き、語尾には英語の /t/ にはない母音「オ」のホルマントが明瞭に残ります。"
@@ -51,6 +57,7 @@ PRESETS = [
     {
         "label": "Really (US)",
         "file": "really_us.wav",
+        "target_word": "really",
         "title": "Really /ˈrɪli/ ~ /ˈriːli/ (US)",
         "phonetics": "/r/ の深谷から /l/ の天井へのジャンプ",
         "desc": "語頭の /r/ で青（F3）が緑（F2）へ沈み込み、黄色（Δ）が 500Hz 前後まで深く潜ります。そこから後半の /l/ に向かって F3 が 3000Hz 超へ跳ね上がるコントラストが特徴です。"
@@ -58,6 +65,7 @@ PRESETS = [
     {
         "label": "Really (UK)",
         "file": "really_uk.wav",
+        "target_word": "really",
         "title": "Really /ˈrɪəli/ (UK)",
         "phonetics": "センタリング二重母音を経由する滑らかな渡り",
         "desc": "前半の /r/ でしっかり 1000Hz 破線を潜る谷を作った後、イギリス英語特有の曖昧母音 /ə/ を挟みながら、後半の /l/ に向かって滑らかに F3 が立ち上がります。"
@@ -65,6 +73,7 @@ PRESETS = [
     {
         "label": "Very (US)",
         "file": "very_us.wav",
+        "target_word": "very",
         "title": "Very /ˈveri/ (US)",
         "phonetics": "有声摩擦 /v/ の振動持続 ＋ r-colored母音のくびれ",
         "desc": "語頭は有声摩擦 /v/ の規則的な声帯振動が続き、破裂音（b）のようなスパイクがありません。続く母音〜/r/ で F3 が引きずり下ろされ、Δ が 500Hz 未満の深い谷を作ります。"
@@ -72,11 +81,22 @@ PRESETS = [
     {
         "label": "Very (UK)",
         "file": "very_uk.wav",
+        "target_word": "very",
         "title": "Very /ˈveri/ (UK)",
         "phonetics": "/v/ から短母音を経て短く鋭い /r/ へ",
         "desc": "米語に比べて母音のR音性化が少なく、谷の幅（持続時間）がコンパクトで引き締まっています。"
     }
 ]
+
+ARPABET_TO_IPA = {
+    "AA": "ɑ", "AE": "æ", "AH0": "ə", "AH": "ʌ", "AO": "ɔ",
+    "AW": "aʊ", "AY": "aɪ", "EH": "e", "ER": "ɚ", "EY": "eɪ",
+    "IH": "ɪ", "IY": "i", "OW": "oʊ", "OY": "ɔɪ", "UH": "ʊ", "UW": "u",
+    "B": "b", "CH": "tʃ", "D": "d", "DH": "ð", "F": "f", "G": "ɡ",
+    "HH": "h", "JH": "dʒ", "K": "k", "L": "l", "M": "m", "N": "n",
+    "NG": "ŋ", "P": "p", "R": "r", "S": "s", "SH": "ʃ", "T": "t",
+    "TH": "θ", "V": "v", "W": "w", "Y": "j", "Z": "z", "ZH": "ʒ"
+}
 
 # E2 ベンチマーク定義（長文標準パッセージ専用）
 E2_PASSAGE_BENCHMARKS = {

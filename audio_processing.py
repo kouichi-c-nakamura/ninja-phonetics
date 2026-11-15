@@ -21,7 +21,8 @@ from constants import (
     E2_PASSAGE_BENCHMARKS,
     DIAGNOSTIC_FUNCTION_WORDS,
     ALL_FUNCTION_WORDS,
-    VOWEL_SET
+    VOWEL_SET,
+    ARPABET_TO_IPA
 )
 
 def decode_audio_bytes(audio_bytes: bytes):
@@ -39,7 +40,81 @@ def decode_audio_bytes(audio_bytes: bytes):
         data = np.mean(data, axis=1)
     return data, sr
 
-def extract_scope_data_from_bytes(audio_bytes: bytes, max_formant_hz: float = 5000.0):
+def extract_a1_phoneme_segments(audio_data: np.ndarray, sample_rate: int, target_text: str, speech_start: float, speech_end: float):
+    """A1スコープ用：MMS-FAを用いて入力テキストの音素境界とIPAラベルを抽出"""
+    if not ALIGNMENT_AVAILABLE or not target_text or not target_text.strip():
+        return []
+
+    clean_target = re.sub(r"[^a-zA-Z'\s]", " ", target_text).strip()
+    if not clean_target:
+        return []
+
+    tmp_wav = "tmp_a1_align.wav"
+    try:
+        sf.write(tmp_wav, audio_data, sample_rate, format="WAV")
+        w_aligns = align_word_characters(tmp_wav, clean_target)
+        if not w_aligns:
+            return []
+
+        # カタカナ比較プリセット "raito" 用の特別音素マッピング
+        if clean_target.lower() == "raito" and len(w_aligns) == 1:
+            chars = w_aligns[0].get("chars", [])
+            if len(chars) == 5:
+                raw_Jp = [
+                    {"ipa": "ɾ", "base": "R", "is_vowel": False, "start": chars[0]["start"], "end": chars[0]["end"]},
+                    {"ipa": "aɪ", "base": "AY", "is_vowel": True, "start": chars[1]["start"], "end": chars[2]["end"]},
+                    {"ipa": "t", "base": "T", "is_vowel": False, "start": chars[3]["start"], "end": chars[3]["end"]},
+                    {"ipa": "o", "base": "OW", "is_vowel": True, "start": chars[4]["start"], "end": chars[4]["end"]},
+                ]
+                return _clip_segments_to_speech(raw_Jp, speech_start, speech_end)
+
+        phones = map_words_to_phonemes(w_aligns)
+        segments = []
+        for p in phones:
+            raw_p = p.get("phone", "")
+            base_p = p.get("base", "")
+            ipa_sym = ARPABET_TO_IPA.get(raw_p, ARPABET_TO_IPA.get(base_p, base_p.lower()))
+            segments.append({
+                "ipa": ipa_sym,
+                "base": base_p,
+                "word": p.get("word", ""),
+                "is_vowel": bool(p.get("is_vowel", False)),
+                "start": float(p.get("start", 0.0)),
+                "end": float(p.get("end", 0.0))
+            })
+        return _clip_segments_to_speech(segments, speech_start, speech_end)
+    except Exception:
+        return []
+    finally:
+        if os.path.exists(tmp_wav):
+            try:
+                os.remove(tmp_wav)
+            except Exception:
+                pass
+
+def _clip_segments_to_speech(segments: list, speech_start: float, speech_end: float) -> list:
+    """先頭・末尾音素が無音区間を過度に吸い込まないよう実測発話境界で補正"""
+    if not segments:
+        return []
+    clipped = []
+    n = len(segments)
+    for i, seg in enumerate(segments):
+        s = seg["start"]
+        e = seg["end"]
+        if i == 0 and s < speech_start - 0.03:
+            s = max(s, min(speech_start - 0.015, e - 0.025))
+        if i == n - 1 and e > speech_end + 0.06:
+            e = min(e, max(speech_end + 0.035, s + 0.025))
+        if e <= s:
+            e = s + 0.02
+        clipped.append({
+            **seg,
+            "start": round(float(s), 3),
+            "end": round(float(e), 3)
+        })
+    return clipped
+
+def extract_scope_data_from_bytes(audio_bytes: bytes, target_text: str = "", max_formant_hz: float = 5000.0):
     audio_data, sample_rate = decode_audio_bytes(audio_bytes)
     snd = parselmouth.Sound(audio_data.astype(np.float64), sampling_frequency=float(sample_rate))
     pitch = snd.to_pitch()
@@ -50,6 +125,7 @@ def extract_scope_data_from_bytes(audio_bytes: bytes, max_formant_hz: float = 50
     f2_list, f3_list, delta_list, valid_times = [], [], [], []
     max_int = np.max(intensity.values) if len(intensity.values) > 0 else 0
     threshold_int = max(25.0, max_int - 35.0)
+    active_int_times = [float(t) for t in times if intensity.get_value(t) >= max(22.0, max_int - 38.0)]
 
     for t in times:
         f0 = pitch.get_value_at_time(t)
@@ -67,8 +143,16 @@ def extract_scope_data_from_bytes(audio_bytes: bytes, max_formant_hz: float = 50
         else:
             f2_list.append(None); f3_list.append(None); delta_list.append(None)
 
+    speech_start = float(min(active_int_times)) if active_int_times else (float(min(valid_times)) if valid_times else 0.0)
+    speech_end = float(max(active_int_times)) if active_int_times else (float(max(valid_times)) if valid_times else float(snd.duration))
+
     x_min = max(0.0, float(min(valid_times)) - 0.08) if valid_times else 0.0
     x_max = min(float(snd.duration), float(max(valid_times)) + 0.25) if valid_times else float(snd.duration)
+
+    phonemes = extract_a1_phoneme_segments(audio_data, sample_rate, target_text, speech_start, speech_end)
+    if phonemes:
+        x_min = max(0.0, min(x_min, phonemes[0]["start"] - 0.04))
+        x_max = min(float(snd.duration), max(x_max, phonemes[-1]["end"] + 0.08))
 
     spec = snd.to_spectrogram(window_length=0.005, maximum_frequency=4200.0, time_step=0.003, frequency_step=25.0)
     spec_vals = 10.0 * np.log10(np.maximum(spec.values, 1e-12))
@@ -99,7 +183,8 @@ def extract_scope_data_from_bytes(audio_bytes: bytes, max_formant_hz: float = 50
         "times": np.round(times, 4).tolist(),
         "f2": f2_list, "f3": f3_list, "delta": delta_list,
         "wave_t": wave_t, "wave_y": wave_y, "wav_b64": wav_b64,
-        "spec_w": spec_w, "spec_h": spec_h, "spec_b64": spec_b64
+        "spec_w": spec_w, "spec_h": spec_h, "spec_b64": spec_b64,
+        "phonemes": phonemes
     }
 
 def load_benchmark_points(bm_csv_path: str, task_key: str):

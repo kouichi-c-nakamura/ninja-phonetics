@@ -58,6 +58,7 @@ def build_spike2_html(data: dict, auto_play: bool = False, export_name: str = "s
   <button id="btn-play" class="btn-play-ready">▶ Play (Space)</button>
   <button id="btn-reset">⏮ 全体選択</button>
   <button id="btn-spec" class="toggle-active">Spectrogram: ON</button>
+  <button id="btn-phonemes" class="toggle-active">Phonemes: ON</button>
   <label style="font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 6px; color: #94A3B8;">
     Speed:
     <select id="sel-rate">
@@ -85,6 +86,7 @@ const ovCtx = ovCanvas.getContext('2d');
 const btnPlay = document.getElementById('btn-play');
 const btnReset = document.getElementById('btn-reset');
 const btnSpec = document.getElementById('btn-spec');
+const btnPhonemes = document.getElementById('btn-phonemes');
 const btnDlPlot = document.getElementById('btn-dl-plot');
 const btnDlAudio = document.getElementById('btn-dl-audio');
 const selRate = document.getElementById('sel-rate');
@@ -96,6 +98,7 @@ let xMin = D.x_min, xMax = D.x_max;
 let selStart = xMin, selEnd = xMax;
 let cursorT = (xMin + xMax) / 2;
 let showSpec = true;
+let showPhonemes = true;
 
 let specCanvas = null;
 if (D.spec_w > 0 && D.spec_h > 0 && D.spec_b64) {{
@@ -154,6 +157,74 @@ function getPanels() {{
 }}
 function valToY(val, vMin, vMax, panel) {{
   return panel.bottom - ((val - vMin) / (vMax - vMin)) * panel.height;
+}}
+
+function drawPhonemeAnnotations(panels, plotW, APP_FONT) {{
+  if (!showPhonemes || !D.phonemes || D.phonemes.length === 0) return;
+  const p1 = panels[0], p2 = panels[1], p3 = panels[2];
+  const tierH = 24;
+
+  bgCtx.save();
+  // 全3パネルに境界縦破線を描画
+  panels.forEach((p) => {{
+    bgCtx.save();
+    bgCtx.beginPath(); bgCtx.rect(MARGIN.left, p.top, plotW, p.height); bgCtx.clip();
+    bgCtx.setLineDash([4, 4]);
+    bgCtx.lineWidth = 1.25;
+    bgCtx.strokeStyle = "rgba(56, 189, 248, 0.42)";
+
+    const bounds = new Set();
+    D.phonemes.forEach(seg => {{
+      bounds.add(seg.start);
+      bounds.add(seg.end);
+    }});
+    bounds.forEach(bt => {{
+      const bx = tToX(bt);
+      if (bx >= MARGIN.left && bx <= W - MARGIN.right) {{
+        bgCtx.beginPath();
+        bgCtx.moveTo(bx, p.top);
+        bgCtx.lineTo(bx, p.bottom);
+        bgCtx.stroke();
+      }}
+    }});
+    bgCtx.restore();
+  }});
+
+  // 第2パネル (Spectrogram / F2&F3) の最上部に音素ラベル帯を描画
+  bgCtx.save();
+  bgCtx.beginPath(); bgCtx.rect(MARGIN.left, p2.top, plotW, p2.height); bgCtx.clip();
+
+  D.phonemes.forEach((seg, idx) => {{
+    const sx = Math.max(MARGIN.left, tToX(seg.start));
+    const ex = Math.min(W - MARGIN.right, tToX(seg.end));
+    const segW = ex - sx;
+    if (segW < 4) return;
+
+    const isRL = (seg.base === "R" || seg.base === "L" || seg.base === "ER");
+    const bgFill = isRL
+      ? "rgba(3, 105, 161, 0.78)"
+      : (seg.is_vowel ? "rgba(6, 78, 59, 0.72)" : "rgba(15, 23, 42, 0.80)");
+    const borderCol = isRL
+      ? "rgba(56, 189, 248, 0.85)"
+      : (seg.is_vowel ? "rgba(16, 185, 129, 0.75)" : "rgba(100, 116, 139, 0.65)");
+    const txtCol = isRL ? "#E0F2FE" : (seg.is_vowel ? "#D1FAE5" : "#E2E8F0");
+
+    bgCtx.fillStyle = bgFill;
+    bgCtx.fillRect(sx, p2.top, segW, tierH);
+    bgCtx.strokeStyle = borderCol;
+    bgCtx.lineWidth = 1.2;
+    bgCtx.strokeRect(sx, p2.top, segW, tierH);
+
+    // 音素IPAラベル
+    bgCtx.fillStyle = txtCol;
+    bgCtx.font = (segW > 26 ? "bold 14px " : "bold 11px ") + APP_FONT;
+    bgCtx.textAlign = "center";
+    bgCtx.textBaseline = "middle";
+    bgCtx.fillText(seg.ipa, sx + segW / 2, p2.top + tierH / 2 + 0.5);
+  }});
+
+  bgCtx.restore();
+  bgCtx.restore();
 }}
 
 function drawBackground() {{
@@ -237,22 +308,6 @@ function drawBackground() {{
   drawSeries(D.times, D.f2, fMin, fMax, p2, "#10B981", 3.0);
   bgCtx.restore();
 
-  // Ch2 凡例 (F3/F2)
-  const legendX = W - MARGIN.right - 85;
-  bgCtx.fillStyle = "rgba(9, 13, 22, 0.85)";
-  bgCtx.fillRect(legendX - 8, p2.top + 6, 80, 44);
-  bgCtx.strokeStyle = "#1E293B"; bgCtx.lineWidth = 1.0;
-  bgCtx.strokeRect(legendX - 8, p2.top + 6, 80, 44);
-
-  bgCtx.font = "bold 13px " + APP_FONT;
-  bgCtx.strokeStyle = "#38BDF8"; bgCtx.lineWidth = 3.0;
-  bgCtx.beginPath(); bgCtx.moveTo(legendX, p2.top + 18); bgCtx.lineTo(legendX + 18, p2.top + 18); bgCtx.stroke();
-  bgCtx.fillStyle = "#38BDF8"; bgCtx.textAlign = "left"; bgCtx.textBaseline = "middle";
-  bgCtx.fillText("F3", legendX + 24, p2.top + 18);
-  bgCtx.strokeStyle = "#10B981"; bgCtx.lineWidth = 3.0;
-  bgCtx.beginPath(); bgCtx.moveTo(legendX, p2.top + 36); bgCtx.lineTo(legendX + 18, p2.top + 36); bgCtx.stroke();
-  bgCtx.fillStyle = "#10B981"; bgCtx.fillText("F2", legendX + 24, p2.top + 36);
-
   const dMin = 0, dMax = 2500;
   [0, 500, 1000, 1500, 2000, 2500].forEach(hz => {{
     const y = valToY(hz, dMin, dMax, p3);
@@ -281,6 +336,26 @@ function drawBackground() {{
   bgCtx.beginPath(); bgCtx.rect(MARGIN.left, p3.top, plotW, p3.height); bgCtx.clip();
   drawSeries(D.times, D.delta, dMin, dMax, p3, "#F59E0B", 3.2);
   bgCtx.restore();
+
+  // 音素セグメンテーション描画 (縦破線 + IPAラベル帯)
+  drawPhonemeAnnotations(panels, plotW, APP_FONT);
+
+  // Ch2 凡例 (音素帯と重ならないよう下げる)
+  const legendX = W - MARGIN.right - 85;
+  const leg2Top = (showPhonemes && D.phonemes && D.phonemes.length > 0) ? (p2.top + 30) : (p2.top + 6);
+  bgCtx.fillStyle = "rgba(9, 13, 22, 0.85)";
+  bgCtx.fillRect(legendX - 8, leg2Top, 80, 44);
+  bgCtx.strokeStyle = "#1E293B"; bgCtx.lineWidth = 1.0;
+  bgCtx.strokeRect(legendX - 8, leg2Top, 80, 44);
+
+  bgCtx.font = "bold 13px " + APP_FONT;
+  bgCtx.strokeStyle = "#38BDF8"; bgCtx.lineWidth = 3.0;
+  bgCtx.beginPath(); bgCtx.moveTo(legendX, leg2Top + 12); bgCtx.lineTo(legendX + 18, leg2Top + 12); bgCtx.stroke();
+  bgCtx.fillStyle = "#38BDF8"; bgCtx.textAlign = "left"; bgCtx.textBaseline = "middle";
+  bgCtx.fillText("F3", legendX + 24, leg2Top + 12);
+  bgCtx.strokeStyle = "#10B981"; bgCtx.lineWidth = 3.0;
+  bgCtx.beginPath(); bgCtx.moveTo(legendX, leg2Top + 30); bgCtx.lineTo(legendX + 18, leg2Top + 30); bgCtx.stroke();
+  bgCtx.fillStyle = "#10B981"; bgCtx.fillText("F2", legendX + 24, leg2Top + 30);
 
   // Ch3 凡例
   const leg3X = W - MARGIN.right - 140;
@@ -340,8 +415,16 @@ function drawOverlay() {{
   ovCtx.beginPath(); ovCtx.moveTo(cx - 6, topY); ovCtx.lineTo(cx + 6, topY); ovCtx.lineTo(cx, topY + 8); ovCtx.closePath(); ovCtx.fill();
   ovCtx.beginPath(); ovCtx.moveTo(cx - 6, botY); ovCtx.lineTo(cx + 6, botY); ovCtx.lineTo(cx, botY - 8); ovCtx.closePath(); ovCtx.fill();
 
+  let activePh = null;
+  if (D.phonemes && D.phonemes.length > 0) {{
+    activePh = D.phonemes.find(s => cursorT >= s.start && cursorT <= s.end);
+  }}
+
   let idx = D.times.findIndex(t => t >= cursorT);
   let html = `<span style="color:#94A3B8;">Cursor:</span> ${{cursorT.toFixed(3)}} s`;
+  if (activePh) {{
+    html += `  |  <span style="color:#BAE6FD; font-weight:700;">/${{activePh.ipa}}/</span>`;
+  }}
   if (idx !== -1 && D.delta[idx] !== null) {{
     html += `  |  <span style="color:#38BDF8;">F3:</span> ${{D.f3[idx]}} Hz   <span style="color:#10B981;">F2:</span> ${{D.f2[idx]}} Hz   <span style="color:#F59E0B;">Δ:</span> ${{D.delta[idx]}} Hz`;
   }}
@@ -352,6 +435,13 @@ btnSpec.addEventListener("click", () => {{
   showSpec = !showSpec;
   btnSpec.textContent = showSpec ? "Spectrogram: ON" : "Spectrogram: OFF";
   btnSpec.classList.toggle("toggle-active", showSpec);
+  drawBackground();
+}});
+
+btnPhonemes.addEventListener("click", () => {{
+  showPhonemes = !showPhonemes;
+  btnPhonemes.textContent = showPhonemes ? "Phonemes: ON" : "Phonemes: OFF";
+  btnPhonemes.classList.toggle("toggle-active", showPhonemes);
   drawBackground();
 }});
 
@@ -412,7 +502,25 @@ ovCanvas.addEventListener("mousemove", (e) => {{
   else if (dragMode === "select") {{ selEnd = xToT(mouseX); cursorT = selEnd; drawOverlay(); }}
 }});
 ovCanvas.addEventListener("mousedown", (e) => {{
-  stopPlayback(); const rect = ovCanvas.getBoundingClientRect(); const mouseX = e.clientX - rect.left; const clickT = xToT(mouseX);
+  stopPlayback();
+  const rect = ovCanvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  const clickT = xToT(mouseX);
+  const panels = getPanels();
+
+  // 第2パネル上端の音素ラベル帯をクリックした場合は、その音素区間を選択して先頭へ移動
+  if (showPhonemes && D.phonemes && mouseY >= panels[1].top && mouseY <= panels[1].top + 24) {{
+    const hitPh = D.phonemes.find(s => clickT >= s.start && clickT <= s.end);
+    if (hitPh) {{
+      selStart = hitPh.start;
+      selEnd = hitPh.end;
+      cursorT = hitPh.start;
+      drawOverlay();
+      return;
+    }}
+  }}
+
   if (Math.abs(mouseX - tToX(cursorT)) <= 12) dragMode = "cursor";
   else {{ dragMode = "select"; selStart = clickT; selEnd = clickT; cursorT = clickT; drawOverlay(); }}
 }});
