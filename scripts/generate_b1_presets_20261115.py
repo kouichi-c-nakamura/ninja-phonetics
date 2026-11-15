@@ -1,6 +1,6 @@
 """
-scripts/generate_b1_presets.py
-B1 (/si/ vs /ʃi/ + 日本語カタカナ比較) プリセット音声一括生成＆COG検証スクリプト
+scripts/generate_b1_presets_20261115.py
+B1 Step 1 (単音・ミニマルペア + 日本語カタカナ比較) & Step 2 (She sells seashells US/UK/JP) 音声一括生成・COG検証
 """
 import os
 import io
@@ -20,21 +20,28 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 
 def load_voice_ids():
-    """benchmarks/voice_registry.json の 'uk' / 'us' / 'jp' リストから voice_id を取得"""
     reg_path = os.path.join("benchmarks", "voice_registry.json")
     with open(reg_path, "r", encoding="utf-8") as f:
         registry = json.load(f)
-
-    # US[0]=Roger, UK[0]=Archer, JP[1]=Believe (Tokyo standard male)
     return {
-        "US": registry["us"][0]["voice_id"],
-        "UK": registry["uk"][0]["voice_id"],
-        "JP": registry["jp"][1]["voice_id"],
+        "US": registry["us"][0]["voice_id"],   # Roger
+        "UK": registry["uk"][0]["voice_id"],   # Archer
+        "JP": registry["jp"][1]["voice_id"],   # Believe
     }
 
 
+SEASHELLS_EN = (
+    "She sells seashells by the seashore. "
+    "The shells that she sells are seashells, I'm sure."
+)
+
+SEASHELLS_JP_KATAKANA = (
+    "シー・セルズ・シーシェルズ・バイ・ザ・シーショア。"
+    "ザ・シェルズ・ザット・シー・セルズ・アー・シーシェルズ、アイム・シュア。"
+)
+
 B1_TARGETS = [
-    # US / UK ネイティブ基準
+    # Step 1: 単音・ミニマルペア基準 (US / UK)
     {"file": "see_us.wav",    "text": "See.",   "cohort": "US", "lang": "en"},
     {"file": "see_uk.wav",    "text": "See.",   "cohort": "UK", "lang": "en"},
     {"file": "she_us.wav",    "text": "She.",   "cohort": "US", "lang": "en"},
@@ -44,11 +51,17 @@ B1_TARGETS = [
     {"file": "sip_us.wav",    "text": "Sip.",   "cohort": "US", "lang": "en"},
     {"file": "ship_us.wav",   "text": "Ship.",  "cohort": "US", "lang": "en"},
     {"file": "city_us.wav",   "text": "City.",  "cohort": "US", "lang": "en"},
-    # 日本語カタカナ比較（シー・シート・シップ・シティ）
+
+    # Step 1: 日本語カタカナ比較
     {"file": "shii_jp.wav",   "text": "シー",   "cohort": "JP", "lang": "ja"},
     {"file": "shiito_jp.wav", "text": "シート", "cohort": "JP", "lang": "ja"},
     {"file": "shippu_jp.wav", "text": "シップ", "cohort": "JP", "lang": "ja"},
     {"file": "shitii_jp.wav", "text": "シティ", "cohort": "JP", "lang": "ja"},
+
+    # Step 2: 早口言葉 (US / UK / JPカタカナ比較)
+    {"file": "seashells_us.wav", "text": SEASHELLS_EN,          "cohort": "US", "lang": "en"},
+    {"file": "seashells_uk.wav", "text": SEASHELLS_EN,          "cohort": "UK", "lang": "en"},
+    {"file": "seashells_jp.wav", "text": SEASHELLS_JP_KATAKANA, "cohort": "JP", "lang": "ja"},
 ]
 
 
@@ -94,7 +107,6 @@ def synthesize_wav(text: str, voice_id: str, lang_code: str, out_path: str):
 
 
 def measure_initial_sibilant_cog(wav_path: str) -> float:
-    """語頭の無声歯擦音区間を自動検出し、1kHzハイパス後のスペクトル重心(COG)を計測"""
     snd = parselmouth.Sound(wav_path)
     snd_hp = parselmouth.praat.call(snd, "Filter (pass Hann band)", 1000.0, 11000.0, 100.0)
     pitch = snd.to_pitch()
@@ -114,16 +126,13 @@ def measure_initial_sibilant_cog(wav_path: str) -> float:
     if len(unvoiced_sib_times) < 3:
         return 0.0
 
-    t_start = unvoiced_sib_times[0]
-    t_end = unvoiced_sib_times[-1]
     seg = snd_hp.extract_part(
-        from_time=t_start,
-        to_time=t_end,
+        from_time=unvoiced_sib_times[0],
+        to_time=unvoiced_sib_times[-1],
         window_shape=parselmouth.WindowShape.HANNING,
     )
     spec = seg.to_spectrum(fast=True)
-    cog = float(spec.get_centre_of_gravity(power=2.0))
-    return round(cog, 1)
+    return round(float(spec.get_centre_of_gravity(power=2.0)), 1)
 
 
 def main():
@@ -133,15 +142,14 @@ def main():
     for item in B1_TARGETS:
         out_path = os.path.join(OUT_DIR, item["file"])
         vid = voice_ids[item["cohort"]]
-        print(f"Generating {item['file']:16s} ('{item['text']}') ... ", end="", flush=True)
+        print(f"Generating {item['file']:18s} ... ", end="", flush=True)
         if not os.path.exists(out_path):
             synthesize_wav(item["text"], vid, item["lang"], out_path)
             time.sleep(0.4)
         cog_hz = measure_initial_sibilant_cog(out_path)
         print(f"OK  | Initial Sibilant COG = {cog_hz:6.1f} Hz")
-        time.sleep(0.4)
 
-    print("\nAll 13 B1 presets generated in presets/b1/!")
+    print("\nAll 16 B1 presets ready in presets/b1/!")
 
 
 if __name__ == "__main__":
