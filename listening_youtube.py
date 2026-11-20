@@ -5,20 +5,19 @@ import streamlit.components.v1 as components
 from youtube_transcript_api import YouTubeTranscriptApi
 
 st.set_page_config(
-    page_title="Ninja Listening (YouTube)",
+    page_title="Ninja Listening Trainer",
     layout="centered",
     initial_sidebar_state="collapsed",
 )
 
-# Streamlit上部の余白を詰めてスマホ画面を有効活用
 st.markdown(
     """
     <style>
     .block-container {
-        padding-top: 1.2rem !important;
-        padding-bottom: 0.5rem !important;
-        padding-left: 0.6rem !important;
-        padding-right: 0.6rem !important;
+        padding-top: 0.6rem !important;
+        padding-bottom: 0.4rem !important;
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
     }
     header[data-testid="stHeader"] { display: none; }
     </style>
@@ -76,8 +75,10 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 <style>
   :root {{
     --bg: #0f172a;
+    --panel: #111827;
     --card: #1e293b;
     --accent: #2ba2bd;
+    --danger: #ef4444;
     --text: #f8fafc;
     --muted: #94a3b8;
   }}
@@ -94,17 +95,16 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     overflow: hidden;
   }}
 
-  /* 上部：大きめYouTube映像スペース（16:9フル幅） */
+  /* 1. 上部：YouTube映像エリア */
   .video-section {{
     background: #020617;
-    border-bottom: 1px solid #334155;
     flex-shrink: 0;
   }}
   .player-wrap {{
     position: relative;
     width: 100%;
     aspect-ratio: 16 / 9;
-    max-height: 230px;
+    max-height: 205px;
     background: #000;
   }}
   .player-wrap iframe {{
@@ -114,77 +114,73 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     height: 100%;
   }}
 
-  /* ステータス＆速度＆タイムスタンプズレ補正バー */
+  /* ステータス・Sync微調整バー */
   .meta-bar {{
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 8px;
-    gap: 4px;
+    padding: 4px 8px;
     background: #0b1120;
     border-bottom: 1px solid #1e293b;
+    font-size: 11.5px;
     flex-shrink: 0;
-    flex-wrap: wrap;
   }}
   .time-display {{
-    font-size: 12px;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
   }}
-  .speed-row, .sync-row {{
+  .sync-row {{
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
   }}
   .mini-btn {{
     background: var(--card);
     color: var(--text);
     border: 1px solid #334155;
     border-radius: 5px;
-    padding: 3px 6px;
+    padding: 2px 7px;
     font-size: 11px;
     cursor: pointer;
     font-variant-numeric: tabular-nums;
   }}
-  .mini-btn.active {{
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-    font-weight: 700;
-  }}
   .offset-label {{
-    font-size: 11px;
     color: #38bdf8;
     min-width: 44px;
     text-align: center;
     font-variant-numeric: tabular-nums;
   }}
 
-  /* 中央：コンパクトな字幕スクロールエリア */
+  /* 2. 中央：コンパクト字幕エリア（区間範囲のハイライト付き） */
   .transcript-area {{
-    flex: 1;
+    flex: 1.1;
     overflow-y: auto;
-    padding: 8px 8px 16px;
+    padding: 6px 8px;
     scroll-behavior: smooth;
     position: relative;
+    border-bottom: 1px solid #334155;
   }}
   .caption-line {{
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 8px;
-    padding: 7px 10px;
-    margin-bottom: 5px;
-    border-radius: 7px;
+    gap: 6px;
+    padding: 6px 8px;
+    margin-bottom: 4px;
+    border-radius: 6px;
     background: var(--card);
-    font-size: 14.5px;
-    line-height: 1.4;
+    font-size: 13.5px;
+    line-height: 1.38;
     cursor: pointer;
     border-left: 3px solid transparent;
   }}
+  .caption-line.in-range {{
+    background: rgba(56, 189, 248, 0.14);
+    border-left-color: #38bdf8;
+  }}
   .caption-line.active {{
-    background: rgba(43, 162, 189, 0.24);
-    border-left-color: var(--accent);
+    background: rgba(43, 162, 189, 0.32);
+    border-left-color: #22d3ee;
     font-weight: 600;
   }}
   .caption-main {{
@@ -192,35 +188,35 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     min-width: 0;
   }}
   .caption-time {{
-    display: inline-block;
-    font-size: 11px;
+    font-size: 10.5px;
     color: var(--muted);
-    margin-right: 6px;
+    margin-right: 5px;
     font-variant-numeric: tabular-nums;
   }}
-  .sync-here-btn {{
-    background: rgba(56, 189, 248, 0.12);
-    color: #38bdf8;
-    border: 1px solid rgba(56, 189, 248, 0.35);
-    border-radius: 5px;
-    padding: 2px 6px;
-    font-size: 10px;
+  .line-actions {{
+    display: flex;
+    gap: 3px;
     flex-shrink: 0;
+  }}
+  .tag-btn {{
+    background: rgba(148, 163, 184, 0.14);
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 10px;
     cursor: pointer;
   }}
-  .sync-here-btn:active {{
+  .tag-btn.sync {{
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.4);
+  }}
+  .tag-btn:active {{
     background: var(--accent);
     color: #fff;
   }}
 
-  /* 字幕モード制御 */
-  .mode-mask .caption-text {{
-    filter: blur(6px);
-    user-select: none;
-  }}
-  .mode-mask .caption-line:active .caption-text {{
-    filter: none;
-  }}
+  /* 字幕OFF時の表示 */
   .mode-off .caption-list {{
     display: none;
   }}
@@ -232,76 +228,228 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     flex-direction: column;
     color: var(--muted);
     text-align: center;
-    font-size: 14px;
-    gap: 6px;
+    font-size: 13px;
+    gap: 4px;
   }}
   .mode-off .blind-notice {{
     display: flex;
   }}
 
-  /* 下部：親指コントロールバー（1行スッキリ配置） */
-  .controls {{
-    background: #020617;
-    border-top: 1px solid #334155;
-    padding: 8px 8px 10px;
-    flex-shrink: 0;
+  /* 3. 下部：Ninja Listening Trainer コントロール＆STEPSパネル */
+  .ninja-panel {{
+    flex: 1;
+    background: #0b1120;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+    padding: 6px 8px 8px;
     gap: 6px;
   }}
-  .mode-row {{
+  .ninja-header {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 700;
+    color: #e2e8f0;
+  }}
+  .status-badge {{
+    font-size: 11px;
+    font-weight: 600;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.12);
+    padding: 2px 8px;
+    border-radius: 999px;
+  }}
+  .range-row {{
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 5px;
+    align-items: center;
   }}
-  .nav-row {{
-    display: grid;
-    grid-template-columns: 1fr 1.2fr 1.2fr 1fr;
-    gap: 6px;
-  }}
-  .ctrl-btn {{
+  .mark-box {{
+    display: flex;
+    align-items: center;
     background: var(--card);
-    color: var(--text);
     border: 1px solid #334155;
-    border-radius: 8px;
-    padding: 10px 4px;
-    font-size: 13px;
+    border-radius: 6px;
+    overflow: hidden;
+  }}
+  .mark-btn {{
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    padding: 6px 8px;
+    font-size: 11.5px;
     font-weight: 600;
     cursor: pointer;
-    text-align: center;
     white-space: nowrap;
   }}
-  .ctrl-btn:active {{
-    transform: scale(0.97);
-    background: #334155;
+  .mark-btn:active {{ opacity: 0.85; }}
+  .mark-val {{
+    flex: 1;
+    text-align: center;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: #f8fafc;
+    padding: 0 4px;
   }}
-  .ctrl-btn.primary {{
-    background: var(--accent);
-    border-color: var(--accent);
+  .next-btn {{
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid #475569;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }}
+
+  .run-row {{
+    display: grid;
+    grid-template-columns: 1.4fr 1fr auto;
+    gap: 6px;
+  }}
+  .run-btn {{
+    background: #2563eb;
     color: #fff;
+    border: none;
+    border-radius: 7px;
+    padding: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
   }}
-  .ctrl-btn.mode-active {{
-    background: #334155;
-    border-color: var(--accent);
-    color: #38bdf8;
+  .stop-btn {{
+    background: var(--danger);
+    color: #fff;
+    border: none;
+    border-radius: 7px;
+    padding: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }}
+  .cfg-btn {{
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid #475569;
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-size: 13px;
+    cursor: pointer;
+  }}
+
+  /* STEPS LIST */
+  .steps-header {{
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    display: flex;
+    justify-content: space-between;
+  }}
+  .steps-list {{
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    background: #020617;
+  }}
+  .step-item {{
+    display: grid;
+    grid-template-columns: 28px 54px 64px 1fr;
+    align-items: center;
+    padding: 6px 10px;
+    border-bottom: 1px solid #1e293b;
+    font-size: 12.5px;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }}
+  .step-item:last-child {{ border-bottom: none; }}
+  .step-item.current-step {{
+    background: rgba(43, 162, 189, 0.28);
+    color: #fff;
+    font-weight: 700;
+  }}
+  .step-num {{ color: var(--muted); }}
+  .step-speed {{ color: #f8fafc; font-weight: 600; }}
+  .step-cc-on {{ color: #38bdf8; font-weight: 600; }}
+  .step-cc-off {{ color: #64748b; }}
+
+  /* プロトコル編集モーダル */
+  .modal-backdrop {{
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    z-index: 50;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+  }}
+  .modal-backdrop.open {{ display: flex; }}
+  .modal-box {{
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 10px;
+    width: 100%;
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }}
+  .modal-head {{
+    padding: 10px 12px;
+    font-weight: 700;
+    font-size: 14px;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }}
+  .modal-body {{
+    padding: 8px 12px;
+    overflow-y: auto;
+    flex: 1;
+  }}
+  .edit-row {{
+    display: grid;
+    grid-template-columns: 24px 70px 60px 1fr;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 12px;
+  }}
+  .edit-row input[type="number"] {{
+    width: 100%;
+    background: #0f172a;
+    color: #fff;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    padding: 4px;
+  }}
+  .modal-foot {{
+    padding: 8px 12px;
+    border-top: 1px solid #334155;
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
   }}
 </style>
 </head>
 <body>
 
+  <!-- 1. YouTube映像スペース -->
   <div class="video-section">
     <div class="player-wrap">
       <div id="yt-player"></div>
     </div>
     <div class="meta-bar">
       <div class="time-display" id="time-display">00:00 / 00:00</div>
-      <div class="speed-row">
-        <button class="mini-btn" onclick="setRate(0.7, this)">0.7x</button>
-        <button class="mini-btn active" onclick="setRate(1.0, this)">1.0x</button>
-        <button class="mini-btn" onclick="setRate(1.25, this)">1.25x</button>
-        <button class="mini-btn" onclick="setRate(1.5, this)">1.5x</button>
-      </div>
-      <div class="sync-row" title="字幕のタイミングズレ補正">
+      <div class="sync-row">
+        <span style="color:#64748b;">Sync:</span>
         <button class="mini-btn" onclick="adjustOffset(-1.0)">-1s</button>
         <span class="offset-label" id="offset-label">+0.0s</span>
         <button class="mini-btn" onclick="adjustOffset(1.0)">+1s</button>
@@ -309,43 +457,116 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     </div>
   </div>
 
+  <!-- 2. コンパクト字幕エリア -->
   <div class="transcript-area" id="transcript-area">
     <div class="blind-notice">
-      <div style="font-size: 24px;">🎧</div>
-      <div>Subtitle OFF — Focus on the sound</div>
+      <div style="font-size: 20px;">🎧</div>
+      <div id="blind-step-label">CC OFF — Listen carefully</div>
     </div>
     <div class="caption-list" id="caption-list"></div>
   </div>
 
-  <div class="controls">
-    <div class="mode-row">
-      <button class="ctrl-btn" id="btn-mode-off" onclick="setSubMode('off')">OFF</button>
-      <button class="ctrl-btn" id="btn-mode-mask" onclick="setSubMode('mask')">MASK</button>
-      <button class="ctrl-btn mode-active" id="btn-mode-on" onclick="setSubMode('on')">ON</button>
+  <!-- 3. Ninja Listening Trainer パネル -->
+  <div class="ninja-panel">
+    <div class="ninja-header">
+      <span>Ninja Protocol (0.6x Anchor)</span>
+      <span class="status-badge" id="status-badge">Ready</span>
     </div>
-    <div class="nav-row">
-      <button class="ctrl-btn" onclick="jumpLine(-1)">◀ 前文</button>
-      <button class="ctrl-btn" onclick="repeatCurrentLine()">↻ リピート</button>
-      <button class="ctrl-btn primary" id="btn-play" onclick="togglePlay()">▶ 再生</button>
-      <button class="ctrl-btn" onclick="jumpLine(1)">次文 ▶</button>
+
+    <div class="range-row">
+      <div class="mark-box">
+        <button class="mark-btn" onclick="markStartNow()">Mark start</button>
+        <span class="mark-val" id="start-val">00:00</span>
+      </div>
+      <div class="mark-box">
+        <button class="mark-btn" onclick="markEndNow()">Mark end</button>
+        <span class="mark-val" id="end-val">00:10</span>
+      </div>
+      <button class="next-btn" onclick="moveToNextFragment()">Next →</button>
+    </div>
+
+    <div class="run-row">
+      <button class="run-btn" onclick="runSequence(0)">▶ Run sequence</button>
+      <button class="stop-btn" onclick="stopSequence()">■ Stop</button>
+      <button class="cfg-btn" onclick="openModal()" title="ステップ編集">⚙</button>
+    </div>
+
+    <div class="steps-header">
+      <span>STEPS (TAP TO JUMP IN)</span>
+      <span id="step-counter">19 steps</span>
+    </div>
+    <div class="steps-list" id="steps-list"></div>
+  </div>
+
+  <!-- プロトコル編集モーダル -->
+  <div class="modal-backdrop" id="cfg-modal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span>Customize Ninja Steps</span>
+        <button class="mini-btn" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body" id="modal-steps-body"></div>
+      <div class="modal-foot">
+        <button class="mini-btn" onclick="addStepRow()">+ Add</button>
+        <button class="mini-btn" onclick="resetDefaultSteps()">Reset</button>
+        <button class="mini-btn" style="background:#2563eb;border-color:#2563eb;" onclick="saveModalSteps()">Save</button>
+      </div>
     </div>
   </div>
 
 <script>
   const captions = {captions_json};
   const videoId = "{video_id}";
+
+  // デフォルトの Ninja Protocol (0.6x Anchor) 19ステップ
+  const DEFAULT_STEPS = [
+    {{ speed: 1.0, cc: false }},
+    {{ speed: 1.0, cc: true }},
+    {{ speed: 0.6, cc: true }},
+    {{ speed: 0.6, cc: true }},
+    {{ speed: 0.6, cc: true }},
+    {{ speed: 0.7, cc: true }},
+    {{ speed: 0.8, cc: true }},
+    {{ speed: 0.9, cc: true }},
+    {{ speed: 1.0, cc: false }},
+    {{ speed: 1.1, cc: false }},
+    {{ speed: 1.2, cc: false }},
+    {{ speed: 1.3, cc: false }},
+    {{ speed: 1.4, cc: false }},
+    {{ speed: 1.5, cc: false }},
+    {{ speed: 1.6, cc: false }},
+    {{ speed: 1.7, cc: false }},
+    {{ speed: 1.8, cc: false }},
+    {{ speed: 1.9, cc: false }},
+    {{ speed: 2.0, cc: false }}
+  ];
+
+  let steps = JSON.parse(localStorage.getItem("ninja_steps_v1") || "null") || [...DEFAULT_STEPS];
   let player = null;
-  let activeIndex = -1;
-  let subMode = "on";
-  let timeOffset = 0.0; // 動画時間 - 字幕時間 の補正値（秒）
+  let activeCaptionIdx = -1;
+  let timeOffset = 0.0;
+
+  // 区間（動画の実再生秒数ベース）
+  let rangeStart = 0.0;
+  let rangeEnd = 10.0;
+
+  // シーケンス実行状態
+  let isRunning = false;
+  let currentStepIdx = -1;
+  let stepTransitionLock = false;
+
   let userScrolling = false;
   let scrollTimeout = null;
 
   const listEl = document.getElementById("caption-list");
   const areaEl = document.getElementById("transcript-area");
   const timeEl = document.getElementById("time-display");
-  const playBtn = document.getElementById("btn-play");
   const offsetLabel = document.getElementById("offset-label");
+  const startValEl = document.getElementById("start-val");
+  const endValEl = document.getElementById("end-val");
+  const statusBadge = document.getElementById("status-badge");
+  const stepsListEl = document.getElementById("steps-list");
+  const blindStepLabel = document.getElementById("blind-step-label");
 
   function fmtTime(sec) {{
     if (sec === undefined || sec === null || isNaN(sec)) return "00:00";
@@ -355,29 +576,80 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
   }}
 
+  function fmtTimePrecise(sec) {{
+    if (sec === undefined || sec === null || isNaN(sec)) return "00:00.0";
+    const sClamped = Math.max(0, sec);
+    const m = Math.floor(sClamped / 60);
+    const s = (sClamped % 60).toFixed(1).padStart(4, "0");
+    return String(m).padStart(2, "0") + ":" + s;
+  }}
+
+  function updateRangeUI() {{
+    startValEl.textContent = fmtTimePrecise(rangeStart);
+    endValEl.textContent = fmtTimePrecise(rangeEnd);
+    highlightRangeCaptions();
+  }}
+
+  function highlightRangeCaptions() {{
+    captions.forEach((item, idx) => {{
+      const el = document.getElementById("line-" + idx);
+      if (!el) return;
+      const adjStart = item.start + timeOffset;
+      const adjEnd = item.end + timeOffset;
+      const inRange = (adjEnd > rangeStart + 0.1) && (adjStart < rangeEnd - 0.1);
+      el.classList.toggle("in-range", inRange);
+    }});
+  }}
+
   function renderCaptions() {{
     listEl.innerHTML = "";
     captions.forEach((item, idx) => {{
       const adjStart = item.start + timeOffset;
+      const adjEnd = item.end + timeOffset;
       const div = document.createElement("div");
-      div.className = "caption-line" + (idx === activeIndex ? " active" : "");
+      div.className = "caption-line" + (idx === activeCaptionIdx ? " active" : "");
       div.id = "line-" + idx;
 
       const mainDiv = document.createElement("div");
       mainDiv.className = "caption-main";
-      mainDiv.innerHTML = `<span class="caption-time">${{fmtTime(adjStart)}}</span><span class="caption-text">${{item.text}}</span>`;
+      mainDiv.innerHTML = `<span class="caption-time">${{fmtTime(adjStart)}}</span><span>${{item.text}}</span>`;
       mainDiv.onclick = () => {{
         if (player && player.seekTo) {{
-          player.seekTo(Math.max(0, item.start + timeOffset), true);
+          player.seekTo(Math.max(0, adjStart), true);
           player.playVideo();
         }}
       }};
 
-      // この行を現在の再生時間に合わせるSyncボタン
+      const actions = document.createElement("div");
+      actions.className = "line-actions";
+
+      // この行を Start にセット
+      const startBtn = document.createElement("button");
+      startBtn.className = "tag-btn";
+      startBtn.textContent = "S";
+      startBtn.title = "この行の開始位置を Start に設定";
+      startBtn.onclick = (e) => {{
+        e.stopPropagation();
+        rangeStart = Math.max(0, adjStart);
+        if (rangeEnd <= rangeStart) rangeEnd = Math.max(rangeStart + 2.0, adjEnd);
+        updateRangeUI();
+      }};
+
+      // この行を End にセット
+      const endBtn = document.createElement("button");
+      endBtn.className = "tag-btn";
+      endBtn.textContent = "E";
+      endBtn.title = "この行の終了位置を End に設定";
+      endBtn.onclick = (e) => {{
+        e.stopPropagation();
+        rangeEnd = Math.max(rangeStart + 0.5, adjEnd);
+        updateRangeUI();
+      }};
+
+      // タイミング同期 Sync ボタン
       const syncBtn = document.createElement("button");
-      syncBtn.className = "sync-here-btn";
+      syncBtn.className = "tag-btn sync";
       syncBtn.textContent = "Sync";
-      syncBtn.title = "今聞こえた音声にこの行の時間を合わせる";
       syncBtn.onclick = (e) => {{
         e.stopPropagation();
         if (!player || typeof player.getCurrentTime !== "function") return;
@@ -386,10 +658,14 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         updateOffsetUI();
       }};
 
+      actions.appendChild(startBtn);
+      actions.appendChild(endBtn);
+      actions.appendChild(syncBtn);
       div.appendChild(mainDiv);
-      div.appendChild(syncBtn);
+      div.appendChild(actions);
       listEl.appendChild(div);
     }});
+    highlightRangeCaptions();
   }}
 
   function updateOffsetUI() {{
@@ -403,7 +679,138 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     updateOffsetUI();
   }}
 
+  // STEPSリスト描画
+  function renderStepsList() {{
+    stepsListEl.innerHTML = "";
+    document.getElementById("step-counter").textContent = `${{steps.length}} steps`;
+    steps.forEach((stItem, idx) => {{
+      const row = document.createElement("div");
+      row.className = "step-item" + (isRunning && idx === currentStepIdx ? " current-step" : "");
+      row.id = "step-row-" + idx;
+      row.innerHTML = `
+        <span class="step-num">${{idx + 1}}</span>
+        <span class="step-speed">${{stItem.speed.toFixed(1)}}x</span>
+        <span class="${{stItem.cc ? 'step-cc-on' : 'step-cc-off'}}">${{stItem.cc ? 'CC on' : 'CC off'}}</span>
+        <span style="font-size:11px;color:#64748b;text-align:right;">Tap to jump</span>
+      `;
+      row.onclick = () => {{
+        runSequence(idx);
+      }};
+      stepsListEl.appendChild(row);
+    }});
+  }}
+
+  function setCCVisibility(showCC) {{
+    if (showCC) {{
+      areaEl.classList.remove("mode-off");
+    }} else {{
+      areaEl.classList.add("mode-off");
+      if (isRunning && currentStepIdx >= 0) {{
+        const s = steps[currentStepIdx];
+        blindStepLabel.textContent = `Step ${{currentStepIdx + 1}}/${{steps.length}} (${{s.speed.toFixed(1)}}x) — CC OFF`;
+      }} else {{
+        blindStepLabel.textContent = "CC OFF — Listen carefully";
+      }}
+    }}
+  }}
+
+  function markStartNow() {{
+    if (!player || typeof player.getCurrentTime !== "function") return;
+    rangeStart = player.getCurrentTime();
+    if (rangeEnd <= rangeStart + 0.3) {{
+      rangeEnd = rangeStart + 5.0;
+    }}
+    updateRangeUI();
+  }}
+
+  function markEndNow() {{
+    if (!player || typeof player.getCurrentTime !== "function") return;
+    const now = player.getCurrentTime();
+    if (now > rangeStart + 0.3) {{
+      rangeEnd = now;
+      updateRangeUI();
+    }}
+  }}
+
+  function moveToNextFragment() {{
+    stopSequence();
+    const prevEnd = rangeEnd;
+    rangeStart = prevEnd;
+    // 次の字幕行があればその終わりまでを自動セット
+    const nextCap = captions.find(c => (c.start + timeOffset) >= prevEnd - 0.2);
+    if (nextCap) {{
+      rangeEnd = Math.max(rangeStart + 2.0, nextCap.end + timeOffset);
+    }} else {{
+      rangeEnd = rangeStart + 5.0;
+    }}
+    updateRangeUI();
+    if (player && player.seekTo) {{
+      player.seekTo(rangeStart, true);
+      player.playVideo();
+    }}
+  }}
+
+  function runSequence(startIdx = 0) {{
+    if (!player || steps.length === 0) return;
+    if (rangeEnd <= rangeStart + 0.2) {{
+      rangeEnd = rangeStart + 5.0;
+      updateRangeUI();
+    }}
+    isRunning = true;
+    applyStep(startIdx);
+  }}
+
+  function applyStep(idx) {{
+    if (idx >= steps.length) {{
+      // 全ステップ完了
+      isRunning = false;
+      currentStepIdx = -1;
+      player.pauseVideo();
+      player.setPlaybackRate(1.0);
+      setCCVisibility(true);
+      statusBadge.textContent = "Completed!";
+      renderStepsList();
+      return;
+    }}
+
+    currentStepIdx = idx;
+    const step = steps[idx];
+    stepTransitionLock = true;
+
+    player.setPlaybackRate(step.speed);
+    setCCVisibility(step.cc);
+    statusBadge.textContent = `Step ${{idx + 1}}/${{steps.length}} (${{step.speed.toFixed(1)}}x ${{step.cc ? 'CC ON' : 'CC OFF'}})`;
+
+    renderStepsList();
+    const activeRow = document.getElementById("step-row-" + idx);
+    if (activeRow) {{
+      activeRow.scrollIntoView({{ behavior: "smooth", block: "nearest" }});
+    }}
+
+    player.seekTo(rangeStart, true);
+    player.playVideo();
+
+    setTimeout(() => {{
+      stepTransitionLock = false;
+    }}, 350);
+  }}
+
+  function stopSequence() {{
+    isRunning = false;
+    currentStepIdx = -1;
+    if (player && typeof player.pauseVideo === "function") {{
+      player.pauseVideo();
+      player.setPlaybackRate(1.0);
+    }}
+    setCCVisibility(true);
+    statusBadge.textContent = "Ready";
+    renderStepsList();
+  }}
+
+  // 初期描画
   renderCaptions();
+  renderStepsList();
+  updateRangeUI();
 
   areaEl.addEventListener("touchstart", () => {{
     userScrolling = true;
@@ -429,24 +836,33 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       }},
       events: {{
         onReady: () => {{
-          setInterval(syncLoop, 200);
-        }},
-        onStateChange: (e) => {{
-          playBtn.textContent = (e.data === YT.PlayerState.PLAYING) ? "❚❚ 停止" : "▶ 再生";
+          if (captions.length > 0) {{
+            rangeStart = captions[0].start;
+            rangeEnd = captions[0].end;
+            updateRangeUI();
+          }}
+          setInterval(mainLoop, 100); // 100ms周期で区間終端と字幕を高精度監視
         }}
       }}
     }});
   }};
 
-  function syncLoop() {{
+  function mainLoop() {{
     if (!player || typeof player.getCurrentTime !== "function") return;
     const t = player.getCurrentTime();
     const d = player.getDuration();
     timeEl.textContent = `${{fmtTime(t)}} / ${{fmtTime(d)}}`;
 
-    // オフセット補正済みの時間で判定
-    const effectiveT = t - timeOffset;
+    // 1. Ninja Sequence 実行中の区間終端判定
+    if (isRunning && !stepTransitionLock && player.getPlayerState() === YT.PlayerState.PLAYING) {{
+      if (t >= rangeEnd) {{
+        applyStep(currentStepIdx + 1);
+        return;
+      }}
+    }}
 
+    // 2. 字幕アクティブ行の同期
+    const effectiveT = t - timeOffset;
     let found = -1;
     for (let i = 0; i < captions.length; i++) {{
       if (effectiveT >= captions[i].start && effectiveT < captions[i].end) {{
@@ -463,62 +879,77 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       }}
     }}
 
-    if (found !== activeIndex && found !== -1) {{
-      if (activeIndex !== -1) {{
-        const prev = document.getElementById("line-" + activeIndex);
+    if (found !== activeCaptionIdx && found !== -1) {{
+      if (activeCaptionIdx !== -1) {{
+        const prev = document.getElementById("line-" + activeCaptionIdx);
         if (prev) prev.classList.remove("active");
       }}
-      activeIndex = found;
-      const cur = document.getElementById("line-" + activeIndex);
+      activeCaptionIdx = found;
+      const cur = document.getElementById("line-" + activeCaptionIdx);
       if (cur) {{
         cur.classList.add("active");
-        if (!userScrolling && subMode !== "off") {{
+        if (!userScrolling && !areaEl.classList.contains("mode-off")) {{
           cur.scrollIntoView({{ behavior: "smooth", block: "center" }});
         }}
       }}
     }}
   }}
 
-  function setSubMode(mode) {{
-    subMode = mode;
-    areaEl.classList.remove("mode-mask", "mode-off");
-    if (mode === "mask") areaEl.classList.add("mode-mask");
-    if (mode === "off") areaEl.classList.add("mode-off");
-
-    ["off", "mask", "on"].forEach(m => {{
-      document.getElementById("btn-mode-" + m).classList.toggle("mode-active", m === mode);
+  // --- プロトコルカスタマイズ用モーダル ---
+  let draftSteps = [];
+  function openModal() {{
+    draftSteps = steps.map(s => ({{ ...s }}));
+    renderModalBody();
+    document.getElementById("cfg-modal").classList.add("open");
+  }}
+  function closeModal() {{
+    document.getElementById("cfg-modal").classList.remove("open");
+  }}
+  function renderModalBody() {{
+    const body = document.getElementById("modal-steps-body");
+    body.innerHTML = "";
+    draftSteps.forEach((stItem, idx) => {{
+      const r = document.createElement("div");
+      r.className = "edit-row";
+      r.innerHTML = `
+        <span>${{idx + 1}}</span>
+        <input type="number" step="0.1" min="0.25" max="2.0" value="${{stItem.speed}}"
+               onchange="draftSteps[${{idx}}].speed = parseFloat(this.value) || 1.0" />
+        <label><input type="checkbox" ${{stItem.cc ? "checked" : ""}}
+               onchange="draftSteps[${{idx}}].cc = this.checked" /> CC</label>
+        <div style="text-align:right;">
+          <button class="mini-btn" onclick="moveDraft(${{idx}}, -1)">↑</button>
+          <button class="mini-btn" onclick="moveDraft(${{idx}}, 1)">↓</button>
+          <button class="mini-btn" onclick="delDraft(${{idx}})">✕</button>
+        </div>
+      `;
+      body.appendChild(r);
     }});
   }}
-
-  function togglePlay() {{
-    if (!player) return;
-    const state = player.getPlayerState();
-    if (state === YT.PlayerState.PLAYING) {{
-      player.pauseVideo();
-    }} else {{
-      player.playVideo();
-    }}
+  function moveDraft(idx, dir) {{
+    const target = idx + dir;
+    if (target < 0 || target >= draftSteps.length) return;
+    [draftSteps[idx], draftSteps[target]] = [draftSteps[target], draftSteps[idx]];
+    renderModalBody();
   }}
-
-  function repeatCurrentLine() {{
-    if (!player || captions.length === 0) return;
-    const idx = Math.max(0, activeIndex);
-    player.seekTo(Math.max(0, captions[idx].start + timeOffset), true);
-    player.playVideo();
+  function delDraft(idx) {{
+    draftSteps.splice(idx, 1);
+    renderModalBody();
   }}
-
-  function jumpLine(delta) {{
-    if (!player || captions.length === 0) return;
-    const next = Math.min(captions.length - 1, Math.max(0, activeIndex + delta));
-    player.seekTo(Math.max(0, captions[next].start + timeOffset), true);
-    player.playVideo();
+  function addStepRow() {{
+    draftSteps.push({{ speed: 1.0, cc: false }});
+    renderModalBody();
   }}
-
-  function setRate(rate, btn) {{
-    if (!player) return;
-    player.setPlaybackRate(rate);
-    document.querySelectorAll(".speed-row .mini-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
+  function resetDefaultSteps() {{
+    draftSteps = DEFAULT_STEPS.map(s => ({{ ...s }}));
+    renderModalBody();
+  }}
+  function saveModalSteps() {{
+    if (draftSteps.length === 0) return;
+    steps = draftSteps;
+    localStorage.setItem("ninja_steps_v1", JSON.stringify(steps));
+    renderStepsList();
+    closeModal();
   }}
 </script>
 </body>
@@ -541,6 +972,6 @@ if url:
         try:
             with st.spinner("字幕取得中..."):
                 captions = fetch_transcript(vid)
-            components.html(build_player_html(vid, captions), height=680, scrolling=False)
+            components.html(build_player_html(vid, captions), height=730, scrolling=False)
         except Exception as e:
             st.error(f"字幕を取得できませんでした: {e}")
