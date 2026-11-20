@@ -10,3 +10,4 @@ torch
 torchaudio
 g2p-en
 nltk
+youtube-transcript-api
