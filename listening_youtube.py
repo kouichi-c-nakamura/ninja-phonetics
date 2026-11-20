@@ -6,7 +6,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 
 st.set_page_config(
     page_title="Ninja Listening Trainer",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
@@ -14,12 +14,20 @@ st.markdown(
     """
     <style>
     .block-container {
-        padding-top: 0.6rem !important;
-        padding-bottom: 0.4rem !important;
+        max-width: 100% !important;
+        padding-top: 0.45rem !important;
+        padding-bottom: 0.2rem !important;
         padding-left: 0.5rem !important;
         padding-right: 0.5rem !important;
     }
     header[data-testid="stHeader"] { display: none; }
+    div[data-testid="stTextInput"] {
+        margin-bottom: -0.5rem !important;
+    }
+    iframe {
+        display: block;
+        width: 100% !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -75,7 +83,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 <style>
   :root {{
     --bg: #0f172a;
-    --panel: #111827;
+    --panel: #0b1120;
     --card: #1e293b;
     --accent: #2ba2bd;
     --danger: #ef4444;
@@ -83,19 +91,30 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     --muted: #94a3b8;
   }}
   * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
-  body {{
+  html, body {{
     margin: 0;
     padding: 0;
+    width: 100%;
+    height: 100%;
     background: var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
     overflow: hidden;
   }}
 
-  /* 1. 上部：YouTube映像エリア */
+  /* Default: Portrait (Vertical Stack) */
+  .app-shell {{
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100%;
+    overflow: hidden;
+  }}
+  .left-pane {{
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }}
   .video-section {{
     background: #020617;
     flex-shrink: 0;
@@ -113,14 +132,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     width: 100%;
     height: 100%;
   }}
-
-  /* ステータス・Sync微調整バー */
   .meta-bar {{
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 4px 8px;
-    background: #0b1120;
+    background: var(--panel);
     border-bottom: 1px solid #1e293b;
     font-size: 11.5px;
     flex-shrink: 0;
@@ -151,14 +168,15 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     font-variant-numeric: tabular-nums;
   }}
 
-  /* 2. 中央：コンパクト字幕エリア（区間範囲のハイライト付き） */
+  /* Transcript Pane */
   .transcript-area {{
-    flex: 1.1;
+    flex: 1.15;
     overflow-y: auto;
     padding: 6px 8px;
     scroll-behavior: smooth;
     position: relative;
     border-bottom: 1px solid #334155;
+    min-height: 0;
   }}
   .caption-line {{
     display: flex;
@@ -216,10 +234,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     color: #fff;
   }}
 
-  /* 字幕OFF時の表示 */
-  .mode-off .caption-list {{
-    display: none;
-  }}
+  .mode-off .caption-list {{ display: none; }}
   .blind-notice {{
     display: none;
     height: 100%;
@@ -231,19 +246,18 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     font-size: 13px;
     gap: 4px;
   }}
-  .mode-off .blind-notice {{
-    display: flex;
-  }}
+  .mode-off .blind-notice {{ display: flex; }}
 
-  /* 3. 下部：Ninja Listening Trainer コントロール＆STEPSパネル */
+  /* Ninja Controls + Steps */
   .ninja-panel {{
     flex: 1;
-    background: #0b1120;
+    background: var(--panel);
     display: flex;
     flex-direction: column;
     overflow: hidden;
     padding: 6px 8px 8px;
-    gap: 6px;
+    gap: 5px;
+    min-height: 0;
   }}
   .ninja-header {{
     display: flex;
@@ -252,6 +266,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     font-size: 12px;
     font-weight: 700;
     color: #e2e8f0;
+    flex-shrink: 0;
   }}
   .status-badge {{
     font-size: 11px;
@@ -266,6 +281,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     grid-template-columns: 1fr 1fr auto;
     gap: 5px;
     align-items: center;
+    flex-shrink: 0;
   }}
   .mark-box {{
     display: flex;
@@ -279,8 +295,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     background: #2563eb;
     color: #fff;
     border: none;
-    padding: 6px 8px;
-    font-size: 11.5px;
+    padding: 5px 7px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
@@ -289,35 +305,35 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   .mark-val {{
     flex: 1;
     text-align: center;
-    font-size: 12px;
+    font-size: 11.5px;
     font-variant-numeric: tabular-nums;
     color: #f8fafc;
-    padding: 0 4px;
+    padding: 0 3px;
   }}
   .next-btn {{
     background: var(--card);
     color: var(--text);
     border: 1px solid #475569;
     border-radius: 6px;
-    padding: 6px 10px;
-    font-size: 11.5px;
+    padding: 5px 8px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
   }}
-
   .run-row {{
     display: grid;
     grid-template-columns: 1.4fr 1fr auto;
-    gap: 6px;
+    gap: 5px;
+    flex-shrink: 0;
   }}
   .run-btn {{
     background: #2563eb;
     color: #fff;
     border: none;
-    border-radius: 7px;
-    padding: 8px;
-    font-size: 13px;
+    border-radius: 6px;
+    padding: 7px;
+    font-size: 12.5px;
     font-weight: 700;
     cursor: pointer;
   }}
@@ -325,9 +341,9 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     background: var(--danger);
     color: #fff;
     border: none;
-    border-radius: 7px;
-    padding: 8px;
-    font-size: 13px;
+    border-radius: 6px;
+    padding: 7px;
+    font-size: 12.5px;
     font-weight: 700;
     cursor: pointer;
   }}
@@ -335,13 +351,11 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     background: var(--card);
     color: var(--text);
     border: 1px solid #475569;
-    border-radius: 7px;
-    padding: 8px 10px;
-    font-size: 13px;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12.5px;
     cursor: pointer;
   }}
-
-  /* STEPS LIST */
   .steps-header {{
     font-size: 10px;
     font-weight: 700;
@@ -349,6 +363,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     letter-spacing: 0.04em;
     display: flex;
     justify-content: space-between;
+    flex-shrink: 0;
   }}
   .steps-list {{
     flex: 1;
@@ -356,14 +371,15 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     border: 1px solid #1e293b;
     border-radius: 6px;
     background: #020617;
+    min-height: 0;
   }}
   .step-item {{
     display: grid;
-    grid-template-columns: 28px 54px 64px 1fr;
+    grid-template-columns: 26px 50px 60px 1fr;
     align-items: center;
-    padding: 6px 10px;
+    padding: 5px 8px;
     border-bottom: 1px solid #1e293b;
-    font-size: 12.5px;
+    font-size: 12px;
     cursor: pointer;
     font-variant-numeric: tabular-nums;
   }}
@@ -378,7 +394,46 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   .step-cc-on {{ color: #38bdf8; font-weight: 600; }}
   .step-cc-off {{ color: #64748b; }}
 
-  /* プロトコル編集モーダル */
+  /* =========================================================
+     LANDSCAPE & DESKTOP SPLIT-PANE LAYOUT
+     ========================================================= */
+  @media (min-width: 640px) and (orientation: landscape) {{
+    .app-shell {{
+      display: grid;
+      grid-template-columns: minmax(320px, 46%) 1fr;
+      grid-template-rows: auto 1fr;
+      grid-template-areas:
+        "video transcript"
+        "ninja transcript";
+      height: 100vh;
+    }}
+    .video-section {{
+      grid-area: video;
+      border-right: 1px solid #334155;
+    }}
+    /* On short phone landscape (e.g. 844x390), cap video height so controls fit comfortably */
+    .player-wrap {{
+      max-height: min(36vh, 300px);
+    }}
+    .ninja-panel {{
+      grid-area: ninja;
+      border-right: 1px solid #334155;
+      padding: 5px 8px 6px;
+      gap: 4px;
+    }}
+    .transcript-area {{
+      grid-area: transcript;
+      border-bottom: none;
+      height: 100%;
+      padding: 8px 10px;
+    }}
+    .caption-line {{
+      font-size: 14px;
+      padding: 7px 10px;
+    }}
+  }}
+
+  /* Protocol Customization Modal */
   .modal-backdrop {{
     display: none;
     position: fixed;
@@ -395,7 +450,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     border: 1px solid #475569;
     border-radius: 10px;
     width: 100%;
-    max-height: 82vh;
+    max-width: 460px;
+    max-height: 85vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -441,7 +497,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 </head>
 <body>
 
-  <!-- 1. YouTube映像スペース -->
+<div class="app-shell">
+  <!-- 1. YouTube Video + Sync Meta Bar -->
   <div class="video-section">
     <div class="player-wrap">
       <div id="yt-player"></div>
@@ -457,7 +514,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     </div>
   </div>
 
-  <!-- 2. コンパクト字幕エリア -->
+  <!-- 2. Transcript Area -->
   <div class="transcript-area" id="transcript-area">
     <div class="blind-notice">
       <div style="font-size: 20px;">🎧</div>
@@ -466,7 +523,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     <div class="caption-list" id="caption-list"></div>
   </div>
 
-  <!-- 3. Ninja Listening Trainer パネル -->
+  <!-- 3. Ninja Listening Trainer Controls & Steps -->
   <div class="ninja-panel">
     <div class="ninja-header">
       <span>Ninja Protocol (0.6x Anchor)</span>
@@ -488,7 +545,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     <div class="run-row">
       <button class="run-btn" onclick="runSequence(0)">▶ Run sequence</button>
       <button class="stop-btn" onclick="stopSequence()">■ Stop</button>
-      <button class="cfg-btn" onclick="openModal()" title="ステップ編集">⚙</button>
+      <button class="cfg-btn" onclick="openModal()" title="Customize steps">⚙</button>
     </div>
 
     <div class="steps-header">
@@ -497,28 +554,43 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     </div>
     <div class="steps-list" id="steps-list"></div>
   </div>
+</div>
 
-  <!-- プロトコル編集モーダル -->
-  <div class="modal-backdrop" id="cfg-modal">
-    <div class="modal-box">
-      <div class="modal-head">
-        <span>Customize Ninja Steps</span>
-        <button class="mini-btn" onclick="closeModal()">✕</button>
-      </div>
-      <div class="modal-body" id="modal-steps-body"></div>
-      <div class="modal-foot">
-        <button class="mini-btn" onclick="addStepRow()">+ Add</button>
-        <button class="mini-btn" onclick="resetDefaultSteps()">Reset</button>
-        <button class="mini-btn" style="background:#2563eb;border-color:#2563eb;" onclick="saveModalSteps()">Save</button>
-      </div>
+<!-- Protocol Customization Modal -->
+<div class="modal-backdrop" id="cfg-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span>Customize Ninja Steps</span>
+      <button class="mini-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-steps-body"></div>
+    <div class="modal-foot">
+      <button class="mini-btn" onclick="addStepRow()">+ Add</button>
+      <button class="mini-btn" onclick="resetDefaultSteps()">Reset</button>
+      <button class="mini-btn" style="background:#2563eb;border-color:#2563eb;" onclick="saveModalSteps()">Save</button>
     </div>
   </div>
+</div>
 
 <script>
+  // Auto-fit iframe height to parent viewport on load & orientation change
+  function fitParentIframe() {{
+    try {{
+      const frame = window.frameElement;
+      if (frame && window.parent) {{
+        const topOffset = frame.getBoundingClientRect().top;
+        const avail = Math.max(300, window.parent.innerHeight - topOffset - 6);
+        frame.style.height = avail + "px";
+      }}
+    }} catch (e) {{}}
+  }}
+  window.addEventListener("load", fitParentIframe);
+  window.addEventListener("resize", fitParentIframe);
+  setTimeout(fitParentIframe, 100);
+
   const captions = {captions_json};
   const videoId = "{video_id}";
 
-  // デフォルトの Ninja Protocol (0.6x Anchor) 19ステップ
   const DEFAULT_STEPS = [
     {{ speed: 1.0, cc: false }},
     {{ speed: 1.0, cc: true }},
@@ -546,11 +618,9 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   let activeCaptionIdx = -1;
   let timeOffset = 0.0;
 
-  // 区間（動画の実再生秒数ベース）
   let rangeStart = 0.0;
   let rangeEnd = 10.0;
 
-  // シーケンス実行状態
   let isRunning = false;
   let currentStepIdx = -1;
   let stepTransitionLock = false;
@@ -623,11 +693,9 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       const actions = document.createElement("div");
       actions.className = "line-actions";
 
-      // この行を Start にセット
       const startBtn = document.createElement("button");
       startBtn.className = "tag-btn";
       startBtn.textContent = "S";
-      startBtn.title = "この行の開始位置を Start に設定";
       startBtn.onclick = (e) => {{
         e.stopPropagation();
         rangeStart = Math.max(0, adjStart);
@@ -635,18 +703,15 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         updateRangeUI();
       }};
 
-      // この行を End にセット
       const endBtn = document.createElement("button");
       endBtn.className = "tag-btn";
       endBtn.textContent = "E";
-      endBtn.title = "この行の終了位置を End に設定";
       endBtn.onclick = (e) => {{
         e.stopPropagation();
         rangeEnd = Math.max(rangeStart + 0.5, adjEnd);
         updateRangeUI();
       }};
 
-      // タイミング同期 Sync ボタン
       const syncBtn = document.createElement("button");
       syncBtn.className = "tag-btn sync";
       syncBtn.textContent = "Sync";
@@ -679,7 +744,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     updateOffsetUI();
   }}
 
-  // STEPSリスト描画
   function renderStepsList() {{
     stepsListEl.innerHTML = "";
     document.getElementById("step-counter").textContent = `${{steps.length}} steps`;
@@ -693,9 +757,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         <span class="${{stItem.cc ? 'step-cc-on' : 'step-cc-off'}}">${{stItem.cc ? 'CC on' : 'CC off'}}</span>
         <span style="font-size:11px;color:#64748b;text-align:right;">Tap to jump</span>
       `;
-      row.onclick = () => {{
-        runSequence(idx);
-      }};
+      row.onclick = () => {{ runSequence(idx); }};
       stepsListEl.appendChild(row);
     }});
   }}
@@ -717,9 +779,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   function markStartNow() {{
     if (!player || typeof player.getCurrentTime !== "function") return;
     rangeStart = player.getCurrentTime();
-    if (rangeEnd <= rangeStart + 0.3) {{
-      rangeEnd = rangeStart + 5.0;
-    }}
+    if (rangeEnd <= rangeStart + 0.3) rangeEnd = rangeStart + 5.0;
     updateRangeUI();
   }}
 
@@ -736,7 +796,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     stopSequence();
     const prevEnd = rangeEnd;
     rangeStart = prevEnd;
-    // 次の字幕行があればその終わりまでを自動セット
     const nextCap = captions.find(c => (c.start + timeOffset) >= prevEnd - 0.2);
     if (nextCap) {{
       rangeEnd = Math.max(rangeStart + 2.0, nextCap.end + timeOffset);
@@ -762,7 +821,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   function applyStep(idx) {{
     if (idx >= steps.length) {{
-      // 全ステップ完了
       isRunning = false;
       currentStepIdx = -1;
       player.pauseVideo();
@@ -783,16 +841,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
     renderStepsList();
     const activeRow = document.getElementById("step-row-" + idx);
-    if (activeRow) {{
-      activeRow.scrollIntoView({{ behavior: "smooth", block: "nearest" }});
-    }}
+    if (activeRow) activeRow.scrollIntoView({{ behavior: "smooth", block: "nearest" }});
 
     player.seekTo(rangeStart, true);
     player.playVideo();
 
-    setTimeout(() => {{
-      stepTransitionLock = false;
-    }}, 350);
+    setTimeout(() => {{ stepTransitionLock = false; }}, 350);
   }}
 
   function stopSequence() {{
@@ -807,7 +861,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     renderStepsList();
   }}
 
-  // 初期描画
   renderCaptions();
   renderStepsList();
   updateRangeUI();
@@ -836,12 +889,13 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       }},
       events: {{
         onReady: () => {{
+          fitParentIframe();
           if (captions.length > 0) {{
             rangeStart = captions[0].start;
             rangeEnd = captions[0].end;
             updateRangeUI();
           }}
-          setInterval(mainLoop, 100); // 100ms周期で区間終端と字幕を高精度監視
+          setInterval(mainLoop, 100);
         }}
       }}
     }});
@@ -853,7 +907,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     const d = player.getDuration();
     timeEl.textContent = `${{fmtTime(t)}} / ${{fmtTime(d)}}`;
 
-    // 1. Ninja Sequence 実行中の区間終端判定
     if (isRunning && !stepTransitionLock && player.getPlayerState() === YT.PlayerState.PLAYING) {{
       if (t >= rangeEnd) {{
         applyStep(currentStepIdx + 1);
@@ -861,7 +914,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       }}
     }}
 
-    // 2. 字幕アクティブ行の同期
     const effectiveT = t - timeOffset;
     let found = -1;
     for (let i = 0; i < captions.length; i++) {{
@@ -895,7 +947,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     }}
   }}
 
-  // --- プロトコルカスタマイズ用モーダル ---
   let draftSteps = [];
   function openModal() {{
     draftSteps = steps.map(s => ({{ ...s }}));
@@ -957,7 +1008,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 """
 
 
-# --- Streamlit UI ---
 url = st.text_input(
     "YouTube URL",
     placeholder="YouTube URL を貼り付け...",
@@ -972,6 +1022,6 @@ if url:
         try:
             with st.spinner("字幕取得中..."):
                 captions = fetch_transcript(vid)
-            components.html(build_player_html(vid, captions), height=730, scrolling=False)
+            components.html(build_player_html(vid, captions), height=720, scrolling=False)
         except Exception as e:
             st.error(f"字幕を取得できませんでした: {e}")
