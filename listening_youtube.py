@@ -126,6 +126,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     --panel: #0b1120;
     --card: #1e293b;
     --accent: #2ba2bd;
+    --start-color: #10b981;
+    --end-color: #f59e0b;
     --danger: #ef4444;
     --text: #e2e8f0;
     --muted: #64748b;
@@ -251,7 +253,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   .transcript-area {{
     flex: 1.15;
     overflow-y: auto;
-    padding: 4px 6px;
+    padding: 6px 8px;
     scroll-behavior: smooth;
     position: relative;
     border-bottom: 1px solid #1e293b;
@@ -263,29 +265,51 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     align-items: baseline;
     justify-content: space-between;
     gap: 8px;
-    padding: 6px 8px;
+    padding: 6px 9px;
     margin: 0;
     background: transparent;
     border-bottom: 1px solid rgba(148, 163, 184, 0.07);
+    border-left: 2px solid transparent;
+    border-right: 2px solid transparent;
     font-size: 14px;
     line-height: 1.45;
     cursor: pointer;
-    border-left: 3px solid transparent;
     transition: background 0.12s;
   }}
   .caption-line:last-child {{
     border-bottom: none;
   }}
+
+  /* Single Unified Rounded Enclosure for Selected Range */
   .caption-line.in-range {{
-    background: rgba(56, 189, 248, 0.09);
-    border-left-color: rgba(56, 189, 248, 0.55);
+    background: rgba(148, 163, 184, 0.08);
+    border-left: 1.5px solid rgba(148, 163, 184, 0.42);
+    border-right: 1.5px solid rgba(148, 163, 184, 0.42);
+    border-bottom-color: transparent;
   }}
+  .caption-line:not(.in-range) + .caption-line.in-range,
+  .caption-line.in-range:first-child {{
+    border-top: 1.5px solid rgba(16, 185, 129, 0.65);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    margin-top: 3px;
+  }}
+  .caption-line.in-range:has(+ .caption-line:not(.in-range)),
+  .caption-line.in-range:last-child {{
+    border-bottom: 1.5px solid rgba(245, 158, 11, 0.65);
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    margin-bottom: 3px;
+  }}
+
+  /* Active Playback Line (Teal highlight glides cleanly inside or outside the box) */
   .caption-line.active {{
-    background: rgba(43, 162, 189, 0.22);
-    border-left-color: #2ba2bd;
+    background: rgba(43, 162, 189, 0.24);
+    box-shadow: inset 3px 0 0 #2ba2bd;
     color: #ffffff;
     font-weight: 600;
   }}
+
   .caption-main {{
     flex: 1;
     min-width: 0;
@@ -309,12 +333,25 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     border-radius: 4px;
     padding: 1px 5px;
     font-size: 10px;
+    font-weight: 600;
     cursor: pointer;
   }}
   .caption-line.active .tag-btn,
   .caption-line.in-range .tag-btn {{
     color: #cbd5e1;
-    border-color: rgba(148, 163, 184, 0.4);
+    border-color: rgba(148, 163, 184, 0.38);
+  }}
+  .tag-btn.s-btn:hover,
+  .tag-btn.s-btn.is-start {{
+    background: rgba(16, 185, 129, 0.22);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.7);
+  }}
+  .tag-btn.e-btn:hover,
+  .tag-btn.e-btn.is-end {{
+    background: rgba(245, 158, 11, 0.22);
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, 0.7);
   }}
   .tag-btn.sync-line-btn {{
     background: rgba(251, 191, 36, 0.14);
@@ -324,8 +361,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     padding: 2px 7px;
   }}
   .tag-btn:active {{
-    background: var(--accent);
-    color: #fff;
+    transform: scale(0.95);
   }}
 
   .mode-off .caption-list {{ display: none; }}
@@ -385,24 +421,37 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     border-radius: 6px;
     overflow: hidden;
   }}
+  .mark-box.start-box {{
+    border-color: rgba(16, 185, 129, 0.45);
+  }}
+  .mark-box.end-box {{
+    border-color: rgba(245, 158, 11, 0.45);
+  }}
   .mark-btn {{
-    background: #2563eb;
     color: #fff;
     border: none;
     padding: 5px 7px;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
     white-space: nowrap;
+  }}
+  .mark-btn.start-btn {{
+    background: #059669;
+  }}
+  .mark-btn.end-btn {{
+    background: #d97706;
   }}
   .mark-val {{
     flex: 1;
     text-align: center;
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
-    color: #f8fafc;
     padding: 0 3px;
+    font-weight: 600;
   }}
+  .mark-val.start-val {{ color: #6ee7b7; }}
+  .mark-val.end-val {{ color: #fcd34d; }}
   .next-btn {{
     background: var(--card);
     color: var(--text);
@@ -609,13 +658,13 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     </div>
 
     <div class="range-row">
-      <div class="mark-box">
-        <button class="mark-btn" onclick="markStartNow()">Mark start</button>
-        <span class="mark-val" id="start-val">00:00</span>
+      <div class="mark-box start-box">
+        <button class="mark-btn start-btn" onclick="markStartNow()">Mark start</button>
+        <span class="mark-val start-val" id="start-val">00:00.0</span>
       </div>
-      <div class="mark-box">
-        <button class="mark-btn" onclick="markEndNow()">Mark end</button>
-        <span class="mark-val" id="end-val">00:10</span>
+      <div class="mark-box end-box">
+        <button class="mark-btn end-btn" onclick="markEndNow()">Mark end</button>
+        <span class="mark-val end-val" id="end-val">00:10.0</span>
       </div>
       <button class="next-btn" onclick="moveToNextFragment()">Next →</button>
     </div>
@@ -696,6 +745,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   let isSynced = false;
   let timeOffset = 0.0;
+  let hasUserRange = false;
 
   let rangeStart = 0.0;
   let rangeEnd = 10.0;
@@ -779,9 +829,20 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   }}
 
   function adjustOffset(delta) {{
+    const oldOffset = timeOffset;
     timeOffset = Math.round((timeOffset + delta) * 10) / 10;
+    const diff = timeOffset - oldOffset;
+    if (hasUserRange) {{
+      rangeStart = Math.max(0, rangeStart + diff);
+      rangeEnd = Math.max(rangeStart + 0.5, rangeEnd + diff);
+    }}
+    activeCaptionIdx = -1;
     renderSyncBar();
     renderCaptions();
+    updateRangeUI();
+    if (player && typeof player.getCurrentTime === "function") {{
+      updatePlaybackHighlight(player.getCurrentTime(), true);
+    }}
   }}
 
   function updateRangeUI() {{
@@ -791,14 +852,36 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   }}
 
   function highlightRangeCaptions() {{
+    let firstInRange = -1;
+    let lastInRange = -1;
+
     captions.forEach((item, idx) => {{
       const el = document.getElementById("line-" + idx);
       if (!el) return;
+      const sBtn = el.querySelector(".s-btn");
+      const eBtn = el.querySelector(".e-btn");
+      if (sBtn) sBtn.classList.remove("is-start");
+      if (eBtn) eBtn.classList.remove("is-end");
+
+      if (!hasUserRange) {{
+        el.classList.remove("in-range");
+        return;
+      }}
+
       const adjStart = item.start + timeOffset;
       const adjEnd = item.end + timeOffset;
       const inRange = (adjEnd > rangeStart + 0.1) && (adjStart < rangeEnd - 0.1);
       el.classList.toggle("in-range", inRange);
+      if (inRange) {{
+        if (firstInRange === -1) firstInRange = idx;
+        lastInRange = idx;
+      }}
     }});
+
+    if (hasUserRange && firstInRange !== -1) {{
+      document.getElementById("line-" + firstInRange)?.querySelector(".s-btn")?.classList.add("is-start");
+      document.getElementById("line-" + lastInRange)?.querySelector(".e-btn")?.classList.add("is-end");
+    }}
   }}
 
   function renderCaptions() {{
@@ -833,26 +916,35 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
           const now = player.getCurrentTime();
           timeOffset = Math.round((now - item.start) * 10) / 10;
           isSynced = true;
+          activeCaptionIdx = -1;
+          if (!hasUserRange) {{
+            rangeStart = Math.max(0, item.start + timeOffset);
+            rangeEnd = Math.max(rangeStart + 1.0, item.end + timeOffset);
+          }}
           renderSyncBar();
           renderCaptions();
+          updateRangeUI();
+          updatePlaybackHighlight(now, true);
         }};
         actions.appendChild(syncBtn);
       }} else {{
         const startBtn = document.createElement("button");
-        startBtn.className = "tag-btn";
+        startBtn.className = "tag-btn s-btn";
         startBtn.textContent = "S";
         startBtn.onclick = (e) => {{
           e.stopPropagation();
+          hasUserRange = true;
           rangeStart = Math.max(0, adjStart);
           if (rangeEnd <= rangeStart) rangeEnd = Math.max(rangeStart + 2.0, adjEnd);
           updateRangeUI();
         }};
 
         const endBtn = document.createElement("button");
-        endBtn.className = "tag-btn";
+        endBtn.className = "tag-btn e-btn";
         endBtn.textContent = "E";
         endBtn.onclick = (e) => {{
           e.stopPropagation();
+          hasUserRange = true;
           rangeEnd = Math.max(rangeStart + 0.5, adjEnd);
           updateRangeUI();
         }};
@@ -902,6 +994,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   function markStartNow() {{
     if (!player || typeof player.getCurrentTime !== "function") return;
+    hasUserRange = true;
     rangeStart = player.getCurrentTime();
     if (rangeEnd <= rangeStart + 0.3) rangeEnd = rangeStart + 5.0;
     updateRangeUI();
@@ -911,6 +1004,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     if (!player || typeof player.getCurrentTime !== "function") return;
     const now = player.getCurrentTime();
     if (now > rangeStart + 0.3) {{
+      hasUserRange = true;
       rangeEnd = now;
       updateRangeUI();
     }}
@@ -918,6 +1012,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   function moveToNextFragment() {{
     stopSequence();
+    hasUserRange = true;
     const prevEnd = rangeEnd;
     rangeStart = prevEnd;
     const nextCap = captions.find(c => (c.start + timeOffset) >= prevEnd - 0.2);
@@ -1026,22 +1121,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     }});
   }};
 
-  function mainLoop() {{
-    if (!player || typeof player.getCurrentTime !== "function") return;
-    const t = player.getCurrentTime();
-    const d = player.getDuration();
-    const timeEl = document.getElementById("time-display");
-    if (timeEl) timeEl.textContent = `${{fmtTime(t)}} / ${{fmtTime(d)}}`;
-
-    if (isRunning && !stepTransitionLock && player.getPlayerState() === YT.PlayerState.PLAYING) {{
-      if (t >= rangeEnd) {{
-        applyStep(currentStepIdx + 1);
-        return;
-      }}
-    }}
-
+  function updatePlaybackHighlight(t, forceScroll = false) {{
     if (!isSynced) return;
-
     const effectiveT = t - timeOffset;
     let found = -1;
     for (let i = 0; i < captions.length; i++) {{
@@ -1068,11 +1149,28 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       const cur = document.getElementById("line-" + activeCaptionIdx);
       if (cur) {{
         cur.classList.add("active");
-        if (!userScrolling && !areaEl.classList.contains("mode-off")) {{
+        if ((forceScroll || !userScrolling) && !areaEl.classList.contains("mode-off")) {{
           cur.scrollIntoView({{ behavior: "smooth", block: "center" }});
         }}
       }}
     }}
+  }}
+
+  function mainLoop() {{
+    if (!player || typeof player.getCurrentTime !== "function") return;
+    const t = player.getCurrentTime();
+    const d = player.getDuration();
+    const timeEl = document.getElementById("time-display");
+    if (timeEl) timeEl.textContent = `${{fmtTime(t)}} / ${{fmtTime(d)}}`;
+
+    if (isRunning && !stepTransitionLock && player.getPlayerState() === YT.PlayerState.PLAYING) {{
+      if (t >= rangeEnd) {{
+        applyStep(currentStepIdx + 1);
+        return;
+      }}
+    }}
+
+    updatePlaybackHighlight(t, false);
   }}
 
   let draftSteps = [];
