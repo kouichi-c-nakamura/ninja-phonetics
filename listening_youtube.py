@@ -195,7 +195,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   .unsync-hint {{
     color: #fbbf24;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
   }}
   .unsync-btn {{
     background: rgba(251, 191, 36, 0.14);
@@ -259,6 +259,11 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     border-bottom: 1px solid #1e293b;
     min-height: 0;
     background: #0b1120;
+    display: flex;
+    flex-direction: column;
+  }}
+  .caption-list {{
+    width: 100%;
   }}
   .caption-line {{
     display: flex;
@@ -274,40 +279,134 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     font-size: 14px;
     line-height: 1.45;
     cursor: pointer;
-    transition: background 0.12s;
+    transition: background 0.14s, opacity 0.16s, font-size 0.16s;
   }}
   .caption-line:last-child {{
     border-bottom: none;
   }}
 
-  /* Single Unified Rounded Enclosure for Selected Range */
-  .caption-line.in-range {{
+  /* Single Unified Rounded Enclosure for Selected Range (Browsing Mode) */
+  .transcript-area:not(.training-active) .caption-line.in-range {{
     background: rgba(148, 163, 184, 0.08);
     border-left: 1.5px solid rgba(148, 163, 184, 0.42);
     border-right: 1.5px solid rgba(148, 163, 184, 0.42);
     border-bottom-color: transparent;
   }}
-  .caption-line:not(.in-range) + .caption-line.in-range,
-  .caption-line.in-range:first-child {{
+  .transcript-area:not(.training-active) .caption-line:not(.in-range) + .caption-line.in-range,
+  .transcript-area:not(.training-active) .caption-line.in-range:first-child {{
     border-top: 1.5px solid rgba(16, 185, 129, 0.65);
     border-top-left-radius: 8px;
     border-top-right-radius: 8px;
     margin-top: 3px;
   }}
-  .caption-line.in-range:has(+ .caption-line:not(.in-range)),
-  .caption-line.in-range:last-child {{
+  .transcript-area:not(.training-active) .caption-line.in-range:has(+ .caption-line:not(.in-range)),
+  .transcript-area:not(.training-active) .caption-line.in-range:last-child {{
     border-bottom: 1.5px solid rgba(245, 158, 11, 0.65);
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;
     margin-bottom: 3px;
   }}
 
-  /* Active Playback Line (Teal highlight glides cleanly inside or outside the box) */
-  .caption-line.active {{
+  /* Active Playback Line in Browsing Mode */
+  .transcript-area:not(.training-active) .caption-line.active {{
     background: rgba(43, 162, 189, 0.24);
     box-shadow: inset 3px 0 0 #2ba2bd;
     color: #ffffff;
     font-weight: 600;
+  }}
+
+  /* =========================================================
+     FOCUSED TRAINING STAGE (isRunning === true)
+     ========================================================= */
+  .training-toolbar {{
+    display: none;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 4px;
+    flex-shrink: 0;
+  }}
+  .transcript-area.training-active:not(.mode-off) .training-toolbar {{
+    display: flex;
+  }}
+  .view-pill {{
+    background: rgba(30, 41, 59, 0.85);
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.14s;
+  }}
+  .view-pill.selected {{
+    background: rgba(43, 162, 189, 0.22);
+    color: #38bdf8;
+    border-color: rgba(43, 162, 189, 0.65);
+  }}
+
+  .transcript-area.training-active:not(.mode-off) .caption-list {{
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 4px 6px;
+  }}
+
+  /* Hide everything outside the S-E training scope and hide S/E tag buttons */
+  .transcript-area.training-active .caption-line:not(.in-range) {{
+    display: none !important;
+  }}
+  .transcript-area.training-active .line-actions {{
+    display: none !important;
+  }}
+
+  /* Spotlight Mode (default during training): Active line large + immediate neighbors softly visible */
+  .transcript-area.training-active.view-spotlight .caption-line.in-range {{
+    display: none;
+    border: none;
+    background: transparent;
+    padding: 8px 12px;
+    border-radius: 8px;
+  }}
+  .transcript-area.training-active.view-spotlight .caption-line.in-range.neighbor-line {{
+    display: flex;
+    opacity: 0.34;
+    font-size: 14px;
+    line-height: 1.45;
+    color: #cbd5e1;
+  }}
+  .transcript-area.training-active.view-spotlight .caption-line.in-range.active {{
+    display: flex;
+    opacity: 1;
+    font-size: 20px;
+    line-height: 1.55;
+    font-weight: 600;
+    color: #ffffff;
+    background: rgba(43, 162, 189, 0.16);
+    box-shadow: inset 3px 0 0 #2ba2bd;
+    margin: 4px 0;
+  }}
+
+  /* Pure 1-Line Mode: Only the currently spoken line centered like overlaid subtitles */
+  .transcript-area.training-active.view-oneline .caption-line.in-range {{
+    display: none;
+  }}
+  .transcript-area.training-active.view-oneline .caption-line.in-range.active {{
+    display: flex;
+    justify-content: center;
+    text-align: center;
+    border: none;
+    background: transparent;
+    font-size: 22px;
+    line-height: 1.6;
+    font-weight: 600;
+    color: #ffffff;
+    padding: 12px 16px;
+  }}
+  .transcript-area.training-active.view-oneline .caption-line.in-range.active .caption-time {{
+    display: none;
   }}
 
   .caption-main {{
@@ -354,17 +453,18 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     border-color: rgba(245, 158, 11, 0.7);
   }}
   .tag-btn.sync-line-btn {{
-    background: rgba(251, 191, 36, 0.14);
+    background: rgba(251, 191, 36, 0.18);
     color: #fbbf24;
-    border-color: rgba(251, 191, 36, 0.45);
-    font-weight: 600;
-    padding: 2px 7px;
+    border-color: rgba(251, 191, 36, 0.6);
+    font-weight: 700;
+    padding: 3px 9px;
+    font-size: 11px;
   }}
   .tag-btn:active {{
     transform: scale(0.95);
   }}
 
-  .mode-off .caption-list {{ display: none; }}
+  .mode-off .caption-list {{ display: none !important; }}
   .blind-notice {{
     display: none;
     height: 100%;
@@ -373,12 +473,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     flex-direction: column;
     color: #94a3b8;
     text-align: center;
-    font-size: 13px;
-    gap: 4px;
+    font-size: 14px;
+    gap: 6px;
   }}
   .mode-off .blind-notice {{ display: flex; }}
 
-  /* Ninja Controls + Steps */
+  /* Ninja Controls + Steps (World 1-1 Progressive Unlock) */
   .ninja-panel {{
     flex: 1;
     background: var(--panel);
@@ -388,6 +488,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     padding: 6px 8px 8px;
     gap: 5px;
     min-height: 0;
+    transition: opacity 0.22s ease, filter 0.22s ease;
+  }}
+  .ninja-panel.locked-unsynced {{
+    opacity: 0.34;
+    pointer-events: none;
+    filter: grayscale(0.45);
   }}
   .ninja-header {{
     display: flex;
@@ -405,6 +511,10 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     background: rgba(56, 189, 248, 0.12);
     padding: 2px 8px;
     border-radius: 999px;
+  }}
+  .status-badge.unsynced-badge {{
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.16);
   }}
   .range-row {{
     display: grid;
@@ -641,20 +751,24 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     <div class="meta-bar" id="meta-bar"></div>
   </div>
 
-  <!-- 2. Quiet Transcript Pane -->
-  <div class="transcript-area" id="transcript-area">
+  <!-- 2. Quiet Transcript Pane / Focused Training Stage -->
+  <div class="transcript-area view-spotlight" id="transcript-area">
+    <div class="training-toolbar">
+      <button class="view-pill selected" id="pill-spotlight" onclick="setTrainingView('spotlight')">Spotlight</button>
+      <button class="view-pill" id="pill-oneline" onclick="setTrainingView('oneline')">1-Line</button>
+    </div>
     <div class="blind-notice">
-      <div style="font-size: 20px;">🎧</div>
+      <div style="font-size: 22px;">🎧</div>
       <div id="blind-step-label">CC OFF — Listen carefully</div>
     </div>
     <div class="caption-list" id="caption-list"></div>
   </div>
 
-  <!-- 3. Ninja Controls -->
-  <div class="ninja-panel">
+  <!-- 3. Ninja Controls (Dimmed until Synced) -->
+  <div class="ninja-panel locked-unsynced" id="ninja-panel">
     <div class="ninja-header">
       <span>Ninja Protocol (0.6x Anchor)</span>
-      <span class="status-badge" id="status-badge">Ready</span>
+      <span class="status-badge unsynced-badge" id="status-badge">1. Tap Sync when heard</span>
     </div>
 
     <div class="range-row">
@@ -664,7 +778,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       </div>
       <div class="mark-box end-box">
         <button class="mark-btn end-btn" onclick="markEndNow()">Mark end</button>
-        <span class="mark-val end-val" id="end-val">00:10.0</span>
+        <span class="mark-val end-val" id="end-val">00:30.0</span>
       </div>
       <button class="next-btn" onclick="moveToNextFragment()">Next →</button>
     </div>
@@ -716,6 +830,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   const captions = {captions_json};
   const videoId = "{video_id}";
+  const DEFAULT_SPAN = 30.0;
 
   const DEFAULT_STEPS = [
     {{ speed: 1.0, cc: false }},
@@ -740,6 +855,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   ];
 
   let steps = JSON.parse(localStorage.getItem("ninja_steps_v1") || "null") || [...DEFAULT_STEPS];
+  let trainingView = localStorage.getItem("ninja_training_view") || "spotlight";
   let player = null;
   let activeCaptionIdx = -1;
 
@@ -748,7 +864,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   let hasUserRange = false;
 
   let rangeStart = 0.0;
-  let rangeEnd = 10.0;
+  let rangeEnd = DEFAULT_SPAN;
 
   let isRunning = false;
   let currentStepIdx = -1;
@@ -760,11 +876,31 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   const listEl = document.getElementById("caption-list");
   const areaEl = document.getElementById("transcript-area");
   const metaBarEl = document.getElementById("meta-bar");
+  const ninjaPanelEl = document.getElementById("ninja-panel");
   const startValEl = document.getElementById("start-val");
   const endValEl = document.getElementById("end-val");
   const statusBadge = document.getElementById("status-badge");
   const stepsListEl = document.getElementById("steps-list");
   const blindStepLabel = document.getElementById("blind-step-label");
+
+  function getMaxDuration() {{
+    if (player && typeof player.getDuration === "function") {{
+      const d = player.getDuration();
+      if (d && d > 0) return d;
+    }}
+    if (captions.length > 0) return captions[captions.length - 1].end + 30;
+    return 3600;
+  }}
+
+  function setTrainingView(mode) {{
+    trainingView = mode;
+    localStorage.setItem("ninja_training_view", mode);
+    areaEl.classList.toggle("view-spotlight", mode === "spotlight");
+    areaEl.classList.toggle("view-oneline", mode === "oneline");
+    document.getElementById("pill-spotlight").classList.toggle("selected", mode === "spotlight");
+    document.getElementById("pill-oneline").classList.toggle("selected", mode === "oneline");
+    updateNeighborClasses();
+  }}
 
   function fmtTime(sec) {{
     if (sec === undefined || sec === null || isNaN(sec)) return "00:00";
@@ -780,6 +916,20 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     const m = Math.floor(sClamped / 60);
     const s = (sClamped % 60).toFixed(1).padStart(4, "0");
     return String(m).padStart(2, "0") + ":" + s;
+  }}
+
+  function updatePanelLockState() {{
+    if (!isSynced) {{
+      ninjaPanelEl.classList.add("locked-unsynced");
+      statusBadge.classList.add("unsynced-badge");
+      statusBadge.textContent = "1. Tap Sync when heard";
+    }} else {{
+      ninjaPanelEl.classList.remove("locked-unsynced");
+      statusBadge.classList.remove("unsynced-badge");
+      if (!isRunning) {{
+        statusBadge.textContent = "Ready";
+      }}
+    }}
   }}
 
   function renderSyncBar() {{
@@ -819,9 +969,11 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         </div>
       `;
     }}
+    updatePanelLockState();
   }}
 
   function unsyncAll() {{
+    stopSequence();
     isSynced = false;
     activeCaptionIdx = -1;
     renderSyncBar();
@@ -843,6 +995,25 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     if (player && typeof player.getCurrentTime === "function") {{
       updatePlaybackHighlight(player.getCurrentTime(), true);
     }}
+  }}
+
+  function setStartBoundary(newStart) {{
+    const maxDur = getMaxDuration();
+    rangeStart = Math.max(0, newStart);
+    if (!hasUserRange || rangeEnd <= rangeStart + 0.3) {{
+      rangeEnd = Math.min(maxDur, rangeStart + DEFAULT_SPAN);
+    }}
+    hasUserRange = true;
+    updateRangeUI();
+  }}
+
+  function setEndBoundary(newEnd) {{
+    rangeEnd = Math.max(0.5, newEnd);
+    if (!hasUserRange || rangeStart >= rangeEnd - 0.3) {{
+      rangeStart = Math.max(0, rangeEnd - DEFAULT_SPAN);
+    }}
+    hasUserRange = true;
+    updateRangeUI();
   }}
 
   function updateRangeUI() {{
@@ -882,6 +1053,16 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       document.getElementById("line-" + firstInRange)?.querySelector(".s-btn")?.classList.add("is-start");
       document.getElementById("line-" + lastInRange)?.querySelector(".e-btn")?.classList.add("is-end");
     }}
+    updateNeighborClasses();
+  }}
+
+  function updateNeighborClasses() {{
+    captions.forEach((_, idx) => {{
+      const el = document.getElementById("line-" + idx);
+      if (!el) return;
+      const isNeighbor = activeCaptionIdx !== -1 && (idx === activeCaptionIdx - 1 || idx === activeCaptionIdx + 1);
+      el.classList.toggle("neighbor-line", isNeighbor);
+    }});
   }}
 
   function renderCaptions() {{
@@ -919,7 +1100,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
           activeCaptionIdx = -1;
           if (!hasUserRange) {{
             rangeStart = Math.max(0, item.start + timeOffset);
-            rangeEnd = Math.max(rangeStart + 1.0, item.end + timeOffset);
+            rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
           }}
           renderSyncBar();
           renderCaptions();
@@ -933,10 +1114,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         startBtn.textContent = "S";
         startBtn.onclick = (e) => {{
           e.stopPropagation();
-          hasUserRange = true;
-          rangeStart = Math.max(0, adjStart);
-          if (rangeEnd <= rangeStart) rangeEnd = Math.max(rangeStart + 2.0, adjEnd);
-          updateRangeUI();
+          setStartBoundary(adjStart);
         }};
 
         const endBtn = document.createElement("button");
@@ -944,9 +1122,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         endBtn.textContent = "E";
         endBtn.onclick = (e) => {{
           e.stopPropagation();
-          hasUserRange = true;
-          rangeEnd = Math.max(rangeStart + 0.5, adjEnd);
-          updateRangeUI();
+          setEndBoundary(adjEnd);
         }};
 
         actions.appendChild(startBtn);
@@ -994,33 +1170,20 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   function markStartNow() {{
     if (!player || typeof player.getCurrentTime !== "function") return;
-    hasUserRange = true;
-    rangeStart = player.getCurrentTime();
-    if (rangeEnd <= rangeStart + 0.3) rangeEnd = rangeStart + 5.0;
-    updateRangeUI();
+    setStartBoundary(player.getCurrentTime());
   }}
 
   function markEndNow() {{
     if (!player || typeof player.getCurrentTime !== "function") return;
-    const now = player.getCurrentTime();
-    if (now > rangeStart + 0.3) {{
-      hasUserRange = true;
-      rangeEnd = now;
-      updateRangeUI();
-    }}
+    setEndBoundary(player.getCurrentTime());
   }}
 
   function moveToNextFragment() {{
     stopSequence();
-    hasUserRange = true;
     const prevEnd = rangeEnd;
     rangeStart = prevEnd;
-    const nextCap = captions.find(c => (c.start + timeOffset) >= prevEnd - 0.2);
-    if (nextCap) {{
-      rangeEnd = Math.max(rangeStart + 2.0, nextCap.end + timeOffset);
-    }} else {{
-      rangeEnd = rangeStart + 5.0;
-    }}
+    rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
+    hasUserRange = true;
     updateRangeUI();
     if (player && player.seekTo) {{
       player.seekTo(rangeStart, true);
@@ -1029,12 +1192,14 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   }}
 
   function runSequence(startIdx = 0) {{
-    if (!player || steps.length === 0) return;
-    if (rangeEnd <= rangeStart + 0.2) {{
-      rangeEnd = rangeStart + 5.0;
+    if (!player || steps.length === 0 || !isSynced) return;
+    if (!hasUserRange || rangeEnd <= rangeStart + 0.2) {{
+      hasUserRange = true;
+      rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
       updateRangeUI();
     }}
     isRunning = true;
+    areaEl.classList.add("training-active");
     applyStep(startIdx);
   }}
 
@@ -1042,6 +1207,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     if (idx >= steps.length) {{
       isRunning = false;
       currentStepIdx = -1;
+      areaEl.classList.remove("training-active");
       player.pauseVideo();
       player.setPlaybackRate(1.0);
       setCCVisibility(true);
@@ -1064,6 +1230,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
     player.seekTo(rangeStart, true);
     player.playVideo();
+    updatePlaybackHighlight(rangeStart, true);
 
     setTimeout(() => {{ stepTransitionLock = false; }}, 350);
   }}
@@ -1071,15 +1238,20 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   function stopSequence() {{
     isRunning = false;
     currentStepIdx = -1;
+    areaEl.classList.remove("training-active");
     if (player && typeof player.pauseVideo === "function") {{
       player.pauseVideo();
       player.setPlaybackRate(1.0);
     }}
     setCCVisibility(true);
-    statusBadge.textContent = "Ready";
+    updatePanelLockState();
     renderStepsList();
+    if (activeCaptionIdx !== -1) {{
+      document.getElementById("line-" + activeCaptionIdx)?.scrollIntoView({{ behavior: "smooth", block: "center" }});
+    }}
   }}
 
+  setTrainingView(trainingView);
   renderSyncBar();
   renderCaptions();
   renderStepsList();
@@ -1112,7 +1284,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
           fitParentIframe();
           if (captions.length > 0) {{
             rangeStart = captions[0].start;
-            rangeEnd = captions[0].end;
+            rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
             updateRangeUI();
           }}
           setInterval(mainLoop, 100);
@@ -1149,7 +1321,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       const cur = document.getElementById("line-" + activeCaptionIdx);
       if (cur) {{
         cur.classList.add("active");
-        if ((forceScroll || !userScrolling) && !areaEl.classList.contains("mode-off")) {{
+        updateNeighborClasses();
+        if (!isRunning && (forceScroll || !userScrolling) && !areaEl.classList.contains("mode-off")) {{
           cur.scrollIntoView({{ behavior: "smooth", block: "center" }});
         }}
       }}
