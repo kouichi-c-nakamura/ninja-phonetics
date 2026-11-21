@@ -214,6 +214,15 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     font-variant-numeric: tabular-nums;
     font-size: 11px;
   }}
+  .saved-tag {{
+    font-size: 9.5px;
+    color: #34d399;
+    background: rgba(16, 185, 129, 0.14);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-right: 4px;
+  }}
   .sync-nudge-grid {{
     display: flex;
     flex-wrap: wrap;
@@ -279,7 +288,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     font-size: 14px;
     line-height: 1.45;
     cursor: pointer;
-    transition: background 0.14s, opacity 0.16s, font-size 0.16s;
+    transition: background 0.14s, opacity 0.16s;
   }}
   .caption-line:last-child {{
     border-bottom: none;
@@ -362,31 +371,30 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     display: none !important;
   }}
 
-  /* Spotlight Mode (default during training): Active line large + immediate neighbors softly visible */
+  /* Spotlight Mode: Uniform font size (no layout jump), dimming + bold for focus */
   .transcript-area.training-active.view-spotlight .caption-line.in-range {{
     display: none;
     border: none;
     background: transparent;
     padding: 8px 12px;
     border-radius: 8px;
+    font-size: 19px;
+    line-height: 1.55;
+    margin: 2px 0;
   }}
   .transcript-area.training-active.view-spotlight .caption-line.in-range.neighbor-line {{
     display: flex;
     opacity: 0.34;
-    font-size: 14px;
-    line-height: 1.45;
+    font-weight: 400;
     color: #cbd5e1;
   }}
   .transcript-area.training-active.view-spotlight .caption-line.in-range.active {{
     display: flex;
     opacity: 1;
-    font-size: 20px;
-    line-height: 1.55;
     font-weight: 600;
     color: #ffffff;
     background: rgba(43, 162, 189, 0.16);
     box-shadow: inset 3px 0 0 #2ba2bd;
-    margin: 4px 0;
   }}
 
   /* Pure 1-Line Mode: Only the currently spoken line centered like overlaid subtitles */
@@ -831,6 +839,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   const captions = {captions_json};
   const videoId = "{video_id}";
   const DEFAULT_SPAN = 30.0;
+  const SYNC_CACHE_KEY = "ninja_sync_cache_v1";
+  const MAX_CACHE_ENTRIES = 100;
 
   const DEFAULT_STEPS = [
     {{ speed: 1.0, cc: false }},
@@ -860,6 +870,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   let activeCaptionIdx = -1;
 
   let isSynced = false;
+  let restoredFromCache = false;
   let timeOffset = 0.0;
   let hasUserRange = false;
 
@@ -882,6 +893,54 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   const statusBadge = document.getElementById("status-badge");
   const stepsListEl = document.getElementById("steps-list");
   const blindStepLabel = document.getElementById("blind-step-label");
+
+  /* Per-video sync cache helpers (LRU capped at 100 entries) */
+  function loadSyncCache() {{
+    try {{
+      return JSON.parse(localStorage.getItem(SYNC_CACHE_KEY) || "{{}}");
+    }} catch (e) {{
+      return {{}};
+    }}
+  }}
+
+  function saveVideoSyncState() {{
+    if (!isSynced || !videoId) return;
+    try {{
+      const cache = loadSyncCache();
+      cache[videoId] = {{
+        timeOffset: timeOffset,
+        hasUserRange: hasUserRange,
+        rangeStart: rangeStart,
+        rangeEnd: rangeEnd,
+        updatedAt: Date.now()
+      }};
+      const keys = Object.keys(cache);
+      if (keys.length > MAX_CACHE_ENTRIES) {{
+        keys.sort((a, b) => (cache[a].updatedAt || 0) - (cache[b].updatedAt || 0));
+        for (let i = 0; i < keys.length - MAX_CACHE_ENTRIES; i++) {{
+          delete cache[keys[i]];
+        }}
+      }}
+      localStorage.setItem(SYNC_CACHE_KEY, JSON.stringify(cache));
+    }} catch (e) {{}}
+  }}
+
+  function restoreVideoSyncState() {{
+    const cache = loadSyncCache();
+    const entry = cache[videoId];
+    if (entry && typeof entry.timeOffset === "number") {{
+      timeOffset = entry.timeOffset;
+      isSynced = true;
+      restoredFromCache = true;
+      if (entry.hasUserRange && typeof entry.rangeStart === "number" && typeof entry.rangeEnd === "number") {{
+        hasUserRange = true;
+        rangeStart = entry.rangeStart;
+        rangeEnd = entry.rangeEnd;
+      }}
+      return true;
+    }}
+    return false;
+  }}
 
   function getMaxDuration() {{
     if (player && typeof player.getDuration === "function") {{
@@ -943,11 +1002,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       `;
     }} else {{
       const sign = timeOffset >= 0 ? "+" : "";
+      const savedHtml = restoredFromCache ? `<span class="saved-tag">Saved</span>` : "";
       metaBarEl.innerHTML = `
         <div class="meta-top">
           <div class="time-display" id="time-display">${{curTimeText}}</div>
           <div>
-            <span class="offset-badge">${{sign}}${{timeOffset.toFixed(1)}}s</span>
+            ${{savedHtml}}<span class="offset-badge">${{sign}}${{timeOffset.toFixed(1)}}s</span>
             <button class="unsync-btn" onclick="unsyncAll()">Unsync</button>
           </div>
         </div>
@@ -975,6 +1035,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   function unsyncAll() {{
     stopSequence();
     isSynced = false;
+    restoredFromCache = false;
     activeCaptionIdx = -1;
     renderSyncBar();
     renderCaptions();
@@ -983,12 +1044,14 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   function adjustOffset(delta) {{
     const oldOffset = timeOffset;
     timeOffset = Math.round((timeOffset + delta) * 10) / 10;
+    restoredFromCache = false;
     const diff = timeOffset - oldOffset;
     if (hasUserRange) {{
       rangeStart = Math.max(0, rangeStart + diff);
       rangeEnd = Math.max(rangeStart + 0.5, rangeEnd + diff);
     }}
     activeCaptionIdx = -1;
+    saveVideoSyncState();
     renderSyncBar();
     renderCaptions();
     updateRangeUI();
@@ -1004,6 +1067,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       rangeEnd = Math.min(maxDur, rangeStart + DEFAULT_SPAN);
     }}
     hasUserRange = true;
+    saveVideoSyncState();
     updateRangeUI();
   }}
 
@@ -1013,6 +1077,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       rangeStart = Math.max(0, rangeEnd - DEFAULT_SPAN);
     }}
     hasUserRange = true;
+    saveVideoSyncState();
     updateRangeUI();
   }}
 
@@ -1097,11 +1162,13 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
           const now = player.getCurrentTime();
           timeOffset = Math.round((now - item.start) * 10) / 10;
           isSynced = true;
+          restoredFromCache = false;
           activeCaptionIdx = -1;
           if (!hasUserRange) {{
             rangeStart = Math.max(0, item.start + timeOffset);
             rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
           }}
+          saveVideoSyncState();
           renderSyncBar();
           renderCaptions();
           updateRangeUI();
@@ -1184,6 +1251,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     rangeStart = prevEnd;
     rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
     hasUserRange = true;
+    saveVideoSyncState();
     updateRangeUI();
     if (player && player.seekTo) {{
       player.seekTo(rangeStart, true);
@@ -1196,6 +1264,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     if (!hasUserRange || rangeEnd <= rangeStart + 0.2) {{
       hasUserRange = true;
       rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
+      saveVideoSyncState();
       updateRangeUI();
     }}
     isRunning = true;
@@ -1251,6 +1320,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     }}
   }}
 
+  /* Initialize state (attempting per-video cache restore first) */
+  const hadCachedSync = restoreVideoSyncState();
   setTrainingView(trainingView);
   renderSyncBar();
   renderCaptions();
@@ -1282,10 +1353,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       events: {{
         onReady: () => {{
           fitParentIframe();
-          if (captions.length > 0) {{
+          if (!hadCachedSync && captions.length > 0) {{
             rangeStart = captions[0].start;
             rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
             updateRangeUI();
+          }} else if (hadCachedSync) {{
+            updatePlaybackHighlight(0, true);
           }}
           setInterval(mainLoop, 100);
         }}
