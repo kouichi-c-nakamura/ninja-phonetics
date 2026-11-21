@@ -46,12 +46,50 @@ def extract_video_id(url: str) -> str | None:
     return None
 
 
+def merge_into_sentences(raw_items: list[dict]) -> list[dict]:
+    """Merge fragmented YouTube captions into cleaner sentence/clause lines."""
+    if not raw_items:
+        return []
+
+    has_punctuation = any(re.search(r"[.?!]$", item["text"]) for item in raw_items[:30])
+    merged = []
+    buf_text = []
+    buf_start = raw_items[0]["start"]
+    buf_end = raw_items[0]["end"]
+
+    for i, item in enumerate(raw_items):
+        text = item["text"]
+        if not buf_text:
+            buf_start = item["start"]
+        buf_text.append(text)
+        buf_end = item["end"]
+
+        joined = " ".join(buf_text)
+        next_gap = (raw_items[i + 1]["start"] - buf_end) if i + 1 < len(raw_items) else 999.0
+
+        if has_punctuation:
+            should_flush = bool(re.search(r"[.?!][\"')\]]*$", text)) or len(joined) > 140 or next_gap > 1.5
+        else:
+            should_flush = next_gap > 0.65 or len(joined) >= 75
+
+        if should_flush or i == len(raw_items) - 1:
+            merged.append({
+                "start": buf_start,
+                "duration": max(0.2, buf_end - buf_start),
+                "end": buf_end,
+                "text": joined,
+            })
+            buf_text = []
+
+    return merged
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
-def fetch_transcript(video_id: str, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
+def fetch_transcript(video_id: str, merge_sentences: bool = True, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
     if hasattr(YouTubeTranscriptApi, "fetch") or not hasattr(YouTubeTranscriptApi, "get_transcript"):
         api = YouTubeTranscriptApi()
         fetched = api.fetch(video_id, languages=list(languages))
-        return [
+        items = [
             {
                 "start": float(item.start),
                 "duration": float(item.duration),
@@ -60,16 +98,18 @@ def fetch_transcript(video_id: str, languages: tuple = ("en", "en-US", "en-GB"))
             }
             for item in fetched
         ]
-    raw = YouTubeTranscriptApi.get_transcript(video_id, languages=list(languages))
-    return [
-        {
-            "start": float(item["start"]),
-            "duration": float(item["duration"]),
-            "end": float(item["start"] + item["duration"]),
-            "text": item["text"].replace("\n", " ").strip(),
-        }
-        for item in raw
-    ]
+    else:
+        raw = YouTubeTranscriptApi.get_transcript(video_id, languages=list(languages))
+        items = [
+            {
+                "start": float(item["start"]),
+                "duration": float(item["duration"]),
+                "end": float(item["start"] + item["duration"]),
+                "text": item["text"].replace("\n", " ").strip(),
+            }
+            for item in raw
+        ]
+    return merge_into_sentences(items) if merge_sentences else items
 
 
 def build_player_html(video_id: str, captions: list[dict]) -> str:
@@ -87,8 +127,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     --card: #1e293b;
     --accent: #2ba2bd;
     --danger: #ef4444;
-    --text: #f8fafc;
-    --muted: #94a3b8;
+    --text: #e2e8f0;
+    --muted: #64748b;
   }}
   * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
   html, body {{
@@ -102,18 +142,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     overflow: hidden;
   }}
 
-  /* Default: Portrait (Vertical Stack) */
   .app-shell {{
     display: flex;
     flex-direction: column;
     height: 100vh;
     width: 100%;
     overflow: hidden;
-  }}
-  .left-pane {{
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
   }}
   .video-section {{
     background: #020617;
@@ -132,6 +166,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     width: 100%;
     height: 100%;
   }}
+
+  /* Meta & Sync Calibration Bar */
   .meta-bar {{
     display: flex;
     align-items: center;
@@ -139,66 +175,97 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     padding: 4px 8px;
     background: var(--panel);
     border-bottom: 1px solid #1e293b;
-    font-size: 11.5px;
+    font-size: 11px;
     flex-shrink: 0;
+    gap: 6px;
+    min-height: 30px;
   }}
   .time-display {{
-    color: var(--muted);
+    color: #94a3b8;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }}
-  .sync-row {{
+  .sync-controls {{
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }}
-  .mini-btn {{
+  .unsync-hint {{
+    color: #fbbf24;
+    font-size: 11px;
+    font-weight: 600;
+  }}
+  .nudge-btn {{
     background: var(--card);
     color: var(--text);
     border: 1px solid #334155;
-    border-radius: 5px;
-    padding: 2px 7px;
-    font-size: 11px;
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 10.5px;
     cursor: pointer;
     font-variant-numeric: tabular-nums;
   }}
-  .offset-label {{
+  .nudge-btn:active {{
+    background: var(--accent);
+    color: #fff;
+  }}
+  .unsync-btn {{
+    background: rgba(251, 191, 36, 0.14);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 10.5px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-right: 2px;
+  }}
+  .offset-badge {{
     color: #38bdf8;
-    min-width: 44px;
-    text-align: center;
+    font-weight: 700;
+    padding: 0 4px;
     font-variant-numeric: tabular-nums;
   }}
 
-  /* Transcript Pane */
+  /* Quiet, Low-Distraction Transcript Area */
   .transcript-area {{
     flex: 1.15;
     overflow-y: auto;
-    padding: 6px 8px;
+    padding: 4px 6px;
     scroll-behavior: smooth;
     position: relative;
-    border-bottom: 1px solid #334155;
+    border-bottom: 1px solid #1e293b;
     min-height: 0;
+    background: #0b1120;
   }}
   .caption-line {{
     display: flex;
-    align-items: flex-start;
+    align-items: baseline;
     justify-content: space-between;
-    gap: 6px;
+    gap: 8px;
     padding: 6px 8px;
-    margin-bottom: 4px;
-    border-radius: 6px;
-    background: var(--card);
-    font-size: 13.5px;
-    line-height: 1.38;
+    margin: 0;
+    background: transparent;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.07);
+    font-size: 14px;
+    line-height: 1.45;
     cursor: pointer;
     border-left: 3px solid transparent;
+    transition: background 0.12s;
+  }}
+  .caption-line:last-child {{
+    border-bottom: none;
   }}
   .caption-line.in-range {{
-    background: rgba(56, 189, 248, 0.14);
-    border-left-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.09);
+    border-left-color: rgba(56, 189, 248, 0.55);
   }}
   .caption-line.active {{
-    background: rgba(43, 162, 189, 0.32);
-    border-left-color: #22d3ee;
+    background: rgba(43, 162, 189, 0.22);
+    border-left-color: #2ba2bd;
+    color: #ffffff;
     font-weight: 600;
   }}
   .caption-main {{
@@ -208,26 +275,35 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   .caption-time {{
     font-size: 10.5px;
     color: var(--muted);
-    margin-right: 5px;
+    margin-right: 6px;
     font-variant-numeric: tabular-nums;
   }}
   .line-actions {{
     display: flex;
     gap: 3px;
     flex-shrink: 0;
+    align-self: center;
   }}
   .tag-btn {{
-    background: rgba(148, 163, 184, 0.14);
-    color: #cbd5e1;
-    border: 1px solid rgba(148, 163, 184, 0.3);
+    background: transparent;
+    color: #64748b;
+    border: 1px solid rgba(100, 116, 139, 0.28);
     border-radius: 4px;
-    padding: 2px 5px;
+    padding: 1px 5px;
     font-size: 10px;
     cursor: pointer;
   }}
-  .tag-btn.sync {{
-    color: #38bdf8;
-    border-color: rgba(56, 189, 248, 0.4);
+  .caption-line.active .tag-btn,
+  .caption-line.in-range .tag-btn {{
+    color: #cbd5e1;
+    border-color: rgba(148, 163, 184, 0.4);
+  }}
+  .tag-btn.sync-line-btn {{
+    background: rgba(251, 191, 36, 0.14);
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.45);
+    font-weight: 600;
+    padding: 2px 7px;
   }}
   .tag-btn:active {{
     background: var(--accent);
@@ -241,7 +317,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     align-items: center;
     justify-content: center;
     flex-direction: column;
-    color: var(--muted);
+    color: #94a3b8;
     text-align: center;
     font-size: 13px;
     gap: 4px;
@@ -301,7 +377,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     cursor: pointer;
     white-space: nowrap;
   }}
-  .mark-btn:active {{ opacity: 0.85; }}
   .mark-val {{
     flex: 1;
     text-align: center;
@@ -394,13 +469,11 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   .step-cc-on {{ color: #38bdf8; font-weight: 600; }}
   .step-cc-off {{ color: #64748b; }}
 
-  /* =========================================================
-     LANDSCAPE & DESKTOP SPLIT-PANE LAYOUT
-     ========================================================= */
+  /* Landscape & Desktop Split-Pane */
   @media (min-width: 640px) and (orientation: landscape) {{
     .app-shell {{
       display: grid;
-      grid-template-columns: minmax(320px, 46%) 1fr;
+      grid-template-columns: minmax(340px, 46%) 1fr;
       grid-template-rows: auto 1fr;
       grid-template-areas:
         "video transcript"
@@ -409,15 +482,14 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     }}
     .video-section {{
       grid-area: video;
-      border-right: 1px solid #334155;
+      border-right: 1px solid #1e293b;
     }}
-    /* On short phone landscape (e.g. 844x390), cap video height so controls fit comfortably */
     .player-wrap {{
       max-height: min(36vh, 300px);
     }}
     .ninja-panel {{
       grid-area: ninja;
-      border-right: 1px solid #334155;
+      border-right: 1px solid #1e293b;
       padding: 5px 8px 6px;
       gap: 4px;
     }}
@@ -425,15 +497,11 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       grid-area: transcript;
       border-bottom: none;
       height: 100%;
-      padding: 8px 10px;
-    }}
-    .caption-line {{
-      font-size: 14px;
-      padding: 7px 10px;
+      padding: 6px 10px;
     }}
   }}
 
-  /* Protocol Customization Modal */
+  /* Protocol Modal */
   .modal-backdrop {{
     display: none;
     position: fixed;
@@ -498,23 +566,18 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 <body>
 
 <div class="app-shell">
-  <!-- 1. YouTube Video + Sync Meta Bar -->
+  <!-- 1. Video + Sync State Bar -->
   <div class="video-section">
     <div class="player-wrap">
       <div id="yt-player"></div>
     </div>
     <div class="meta-bar">
       <div class="time-display" id="time-display">00:00 / 00:00</div>
-      <div class="sync-row">
-        <span style="color:#64748b;">Sync:</span>
-        <button class="mini-btn" onclick="adjustOffset(-1.0)">-1s</button>
-        <span class="offset-label" id="offset-label">+0.0s</span>
-        <button class="mini-btn" onclick="adjustOffset(1.0)">+1s</button>
-      </div>
+      <div class="sync-controls" id="sync-controls"></div>
     </div>
   </div>
 
-  <!-- 2. Transcript Area -->
+  <!-- 2. Quiet Transcript Pane -->
   <div class="transcript-area" id="transcript-area">
     <div class="blind-notice">
       <div style="font-size: 20px;">🎧</div>
@@ -523,7 +586,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     <div class="caption-list" id="caption-list"></div>
   </div>
 
-  <!-- 3. Ninja Listening Trainer Controls & Steps -->
+  <!-- 3. Ninja Controls -->
   <div class="ninja-panel">
     <div class="ninja-header">
       <span>Ninja Protocol (0.6x Anchor)</span>
@@ -561,19 +624,18 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   <div class="modal-box">
     <div class="modal-head">
       <span>Customize Ninja Steps</span>
-      <button class="mini-btn" onclick="closeModal()">✕</button>
+      <button class="nudge-btn" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body" id="modal-steps-body"></div>
     <div class="modal-foot">
-      <button class="mini-btn" onclick="addStepRow()">+ Add</button>
-      <button class="mini-btn" onclick="resetDefaultSteps()">Reset</button>
-      <button class="mini-btn" style="background:#2563eb;border-color:#2563eb;" onclick="saveModalSteps()">Save</button>
+      <button class="nudge-btn" onclick="addStepRow()">+ Add</button>
+      <button class="nudge-btn" onclick="resetDefaultSteps()">Reset</button>
+      <button class="nudge-btn" style="background:#2563eb;border-color:#2563eb;" onclick="saveModalSteps()">Save</button>
     </div>
   </div>
 </div>
 
 <script>
-  // Auto-fit iframe height to parent viewport on load & orientation change
   function fitParentIframe() {{
     try {{
       const frame = window.frameElement;
@@ -616,6 +678,9 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   let steps = JSON.parse(localStorage.getItem("ninja_steps_v1") || "null") || [...DEFAULT_STEPS];
   let player = null;
   let activeCaptionIdx = -1;
+
+  // Sync State Machine: starts UNSYNCED (auto-scroll frozen, per-line Sync visible)
+  let isSynced = false;
   let timeOffset = 0.0;
 
   let rangeStart = 0.0;
@@ -631,7 +696,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   const listEl = document.getElementById("caption-list");
   const areaEl = document.getElementById("transcript-area");
   const timeEl = document.getElementById("time-display");
-  const offsetLabel = document.getElementById("offset-label");
+  const syncControlsEl = document.getElementById("sync-controls");
   const startValEl = document.getElementById("start-val");
   const endValEl = document.getElementById("end-val");
   const statusBadge = document.getElementById("status-badge");
@@ -652,6 +717,39 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     const m = Math.floor(sClamped / 60);
     const s = (sClamped % 60).toFixed(1).padStart(4, "0");
     return String(m).padStart(2, "0") + ":" + s;
+  }}
+
+  function renderSyncBar() {{
+    if (!isSynced) {{
+      syncControlsEl.innerHTML = `<span class="unsync-hint">⏸ Scroll locked — tap Sync when heard</span>`;
+    }} else {{
+      const sign = timeOffset >= 0 ? "+" : "";
+      syncControlsEl.innerHTML = `
+        <button class="unsync-btn" onclick="unsyncAll()">Unsync</button>
+        <button class="nudge-btn" onclick="adjustOffset(-1.0)">-1</button>
+        <button class="nudge-btn" onclick="adjustOffset(-0.5)">-.5</button>
+        <button class="nudge-btn" onclick="adjustOffset(-0.2)">-.2</button>
+        <button class="nudge-btn" onclick="adjustOffset(-0.1)">-.1</button>
+        <span class="offset-badge">${{sign}}${{timeOffset.toFixed(1)}}s</span>
+        <button class="nudge-btn" onclick="adjustOffset(0.1)">+.1</button>
+        <button class="nudge-btn" onclick="adjustOffset(0.2)">+.2</button>
+        <button class="nudge-btn" onclick="adjustOffset(0.5)">+.5</button>
+        <button class="nudge-btn" onclick="adjustOffset(1.0)">+1</button>
+      `;
+    }}
+  }}
+
+  function unsyncAll() {{
+    isSynced = false;
+    activeCaptionIdx = -1;
+    renderSyncBar();
+    renderCaptions();
+  }}
+
+  function adjustOffset(delta) {{
+    timeOffset = Math.round((timeOffset + delta) * 10) / 10;
+    renderSyncBar();
+    renderCaptions();
   }}
 
   function updateRangeUI() {{
@@ -677,7 +775,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       const adjStart = item.start + timeOffset;
       const adjEnd = item.end + timeOffset;
       const div = document.createElement("div");
-      div.className = "caption-line" + (idx === activeCaptionIdx ? " active" : "");
+      div.className = "caption-line" + (isSynced && idx === activeCaptionIdx ? " active" : "");
       div.id = "line-" + idx;
 
       const mainDiv = document.createElement("div");
@@ -693,55 +791,49 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       const actions = document.createElement("div");
       actions.className = "line-actions";
 
-      const startBtn = document.createElement("button");
-      startBtn.className = "tag-btn";
-      startBtn.textContent = "S";
-      startBtn.onclick = (e) => {{
-        e.stopPropagation();
-        rangeStart = Math.max(0, adjStart);
-        if (rangeEnd <= rangeStart) rangeEnd = Math.max(rangeStart + 2.0, adjEnd);
-        updateRangeUI();
-      }};
+      if (!isSynced) {{
+        const syncBtn = document.createElement("button");
+        syncBtn.className = "tag-btn sync-line-btn";
+        syncBtn.textContent = "Sync";
+        syncBtn.onclick = (e) => {{
+          e.stopPropagation();
+          if (!player || typeof player.getCurrentTime !== "function") return;
+          const now = player.getCurrentTime();
+          timeOffset = Math.round((now - item.start) * 10) / 10;
+          isSynced = true;
+          renderSyncBar();
+          renderCaptions();
+        }};
+        actions.appendChild(syncBtn);
+      }} else {{
+        const startBtn = document.createElement("button");
+        startBtn.className = "tag-btn";
+        startBtn.textContent = "S";
+        startBtn.onclick = (e) => {{
+          e.stopPropagation();
+          rangeStart = Math.max(0, adjStart);
+          if (rangeEnd <= rangeStart) rangeEnd = Math.max(rangeStart + 2.0, adjEnd);
+          updateRangeUI();
+        }};
 
-      const endBtn = document.createElement("button");
-      endBtn.className = "tag-btn";
-      endBtn.textContent = "E";
-      endBtn.onclick = (e) => {{
-        e.stopPropagation();
-        rangeEnd = Math.max(rangeStart + 0.5, adjEnd);
-        updateRangeUI();
-      }};
+        const endBtn = document.createElement("button");
+        endBtn.className = "tag-btn";
+        endBtn.textContent = "E";
+        endBtn.onclick = (e) => {{
+          e.stopPropagation();
+          rangeEnd = Math.max(rangeStart + 0.5, adjEnd);
+          updateRangeUI();
+        }};
 
-      const syncBtn = document.createElement("button");
-      syncBtn.className = "tag-btn sync";
-      syncBtn.textContent = "Sync";
-      syncBtn.onclick = (e) => {{
-        e.stopPropagation();
-        if (!player || typeof player.getCurrentTime !== "function") return;
-        const now = player.getCurrentTime();
-        timeOffset = now - item.start;
-        updateOffsetUI();
-      }};
+        actions.appendChild(startBtn);
+        actions.appendChild(endBtn);
+      }}
 
-      actions.appendChild(startBtn);
-      actions.appendChild(endBtn);
-      actions.appendChild(syncBtn);
       div.appendChild(mainDiv);
       div.appendChild(actions);
       listEl.appendChild(div);
     }});
     highlightRangeCaptions();
-  }}
-
-  function updateOffsetUI() {{
-    const sign = timeOffset >= 0 ? "+" : "";
-    offsetLabel.textContent = `${{sign}}${{timeOffset.toFixed(1)}}s`;
-    renderCaptions();
-  }}
-
-  function adjustOffset(delta) {{
-    timeOffset += delta;
-    updateOffsetUI();
   }}
 
   function renderStepsList() {{
@@ -861,6 +953,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     renderStepsList();
   }}
 
+  renderSyncBar();
   renderCaptions();
   renderStepsList();
   updateRangeUI();
@@ -913,6 +1006,9 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         return;
       }}
     }}
+
+    // Only highlight and auto-scroll AFTER Sync has been established
+    if (!isSynced) return;
 
     const effectiveT = t - timeOffset;
     let found = -1;
@@ -969,9 +1065,9 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         <label><input type="checkbox" ${{stItem.cc ? "checked" : ""}}
                onchange="draftSteps[${{idx}}].cc = this.checked" /> CC</label>
         <div style="text-align:right;">
-          <button class="mini-btn" onclick="moveDraft(${{idx}}, -1)">↑</button>
-          <button class="mini-btn" onclick="moveDraft(${{idx}}, 1)">↓</button>
-          <button class="mini-btn" onclick="delDraft(${{idx}})">✕</button>
+          <button class="nudge-btn" onclick="moveDraft(${{idx}}, -1)">↑</button>
+          <button class="nudge-btn" onclick="moveDraft(${{idx}}, 1)">↓</button>
+          <button class="nudge-btn" onclick="delDraft(${{idx}})">✕</button>
         </div>
       `;
       body.appendChild(r);
@@ -1008,11 +1104,15 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 """
 
 
-url = st.text_input(
-    "YouTube URL",
-    placeholder="YouTube URL を貼り付け...",
-    label_visibility="collapsed",
-)
+col_url, col_merge = st.columns([5, 1])
+with col_url:
+    url = st.text_input(
+        "YouTube URL",
+        placeholder="YouTube URL を貼り付け...",
+        label_visibility="collapsed",
+    )
+with col_merge:
+    merge_opt = st.checkbox("Merge", value=True, help="断片字幕を文単位に結合")
 
 if url:
     vid = extract_video_id(url)
@@ -1021,7 +1121,7 @@ if url:
     else:
         try:
             with st.spinner("字幕取得中..."):
-                captions = fetch_transcript(vid)
+                captions = fetch_transcript(vid, merge_sentences=merge_opt)
             components.html(build_player_html(vid, captions), height=720, scrolling=False)
         except Exception as e:
             st.error(f"字幕を取得できませんでした: {e}")
