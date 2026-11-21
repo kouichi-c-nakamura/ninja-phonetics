@@ -185,17 +185,41 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    min-height: 22px;
+    min-height: 24px;
   }}
   .time-display {{
     color: #94a3b8;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }}
+  .unsync-actions {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }}
   .unsync-hint {{
-    color: #fbbf24;
-    font-size: 11px;
-    font-weight: 700;
+    color: #94a3b8;
+    font-size: 10.5px;
+  }}
+  .sync-ok-btn {{
+    background: #10b981;
+    color: #020617;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 12.5px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.38);
+    transition: background 0.14s, transform 0.08s;
+  }}
+  .sync-ok-btn:hover {{
+    background: #34d399;
+  }}
+  .sync-ok-btn:active {{
+    transform: translateY(1px);
   }}
   .unsync-btn {{
     background: rgba(251, 191, 36, 0.14);
@@ -294,6 +318,13 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     border-bottom: none;
   }}
 
+  /* Live Highlight Preview While Unsynced (0.0s baseline, scroll stays locked) */
+  .caption-line.preview-active {{
+    background: rgba(43, 162, 189, 0.11);
+    box-shadow: inset 2px 0 0 rgba(43, 162, 189, 0.7);
+    color: #f8fafc;
+  }}
+
   /* Single Unified Rounded Enclosure for Selected Range (Browsing Mode) */
   .transcript-area:not(.training-active) .caption-line.in-range {{
     background: rgba(148, 163, 184, 0.08);
@@ -316,7 +347,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     margin-bottom: 3px;
   }}
 
-  /* Active Playback Line in Browsing Mode */
+  /* Active Playback Line in Synced Browsing Mode */
   .transcript-area:not(.training-active) .caption-line.active {{
     background: rgba(43, 162, 189, 0.24);
     box-shadow: inset 3px 0 0 #2ba2bd;
@@ -776,7 +807,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   <div class="ninja-panel locked-unsynced" id="ninja-panel">
     <div class="ninja-header">
       <span>Ninja Protocol (0.6x Anchor)</span>
-      <span class="status-badge unsynced-badge" id="status-badge">1. Tap Sync when heard</span>
+      <span class="status-badge unsynced-badge" id="status-badge">1. Tap Sync or Sync OK</span>
     </div>
 
     <div class="range-row">
@@ -868,6 +899,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   let trainingView = localStorage.getItem("ninja_training_view") || "spotlight";
   let player = null;
   let activeCaptionIdx = -1;
+  let previewCaptionIdx = -1;
 
   let isSynced = false;
   let restoredFromCache = false;
@@ -894,7 +926,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   const stepsListEl = document.getElementById("steps-list");
   const blindStepLabel = document.getElementById("blind-step-label");
 
-  /* Per-video sync cache helpers (LRU capped at 100 entries) */
   function loadSyncCache() {{
     try {{
       return JSON.parse(localStorage.getItem(SYNC_CACHE_KEY) || "{{}}");
@@ -981,7 +1012,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     if (!isSynced) {{
       ninjaPanelEl.classList.add("locked-unsynced");
       statusBadge.classList.add("unsynced-badge");
-      statusBadge.textContent = "1. Tap Sync when heard";
+      statusBadge.textContent = "1. Tap Sync or Sync OK";
     }} else {{
       ninjaPanelEl.classList.remove("locked-unsynced");
       statusBadge.classList.remove("unsynced-badge");
@@ -997,7 +1028,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       metaBarEl.innerHTML = `
         <div class="meta-top">
           <div class="time-display" id="time-display">${{curTimeText}}</div>
-          <span class="unsync-hint">⏸ Scroll locked — tap Sync when heard</span>
+          <button class="sync-ok-btn" onclick="acceptSyncAsIs()">✓ Sync OK</button>
         </div>
       `;
     }} else {{
@@ -1032,13 +1063,65 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     updatePanelLockState();
   }}
 
+  function deleteVideoSyncState() {{
+    if (!videoId) return;
+    try {{
+      const cache = loadSyncCache();
+      if (cache[videoId]) {{
+        delete cache[videoId];
+        localStorage.setItem(SYNC_CACHE_KEY, JSON.stringify(cache));
+      }}
+    }} catch (e) {{}}
+  }}
+
+  function unsyncAll() {{
+    stopSequence();
+    deleteVideoSyncState();
+    isSynced = false;
+    restoredFromCache = false;
+    hasUserRange = false;
+    timeOffset = 0.0;
+    activeCaptionIdx = -1;
+    previewCaptionIdx = -1;
+    if (captions.length > 0) {{
+      rangeStart = captions[0].start;
+      rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
+    }}
+    renderSyncBar();
+    renderCaptions();
+    updateRangeUI();
+    if (player && typeof player.getCurrentTime === "function") {{
+      updatePlaybackHighlight(player.getCurrentTime(), false);
+    }}
+  }}
+
+  function acceptSyncAsIs() {{
+    timeOffset = 0.0;
+    isSynced = true;
+    restoredFromCache = false;
+    activeCaptionIdx = -1;
+    previewCaptionIdx = -1;
+    saveVideoSyncState();
+    renderSyncBar();
+    renderCaptions();
+    updateRangeUI();
+    if (player && typeof player.getCurrentTime === "function") {{
+      updatePlaybackHighlight(player.getCurrentTime(), true);
+    }}
+  }}
+
   function unsyncAll() {{
     stopSequence();
     isSynced = false;
     restoredFromCache = false;
+    timeOffset = 0.0;
     activeCaptionIdx = -1;
+    previewCaptionIdx = -1;
     renderSyncBar();
     renderCaptions();
+    if (player && typeof player.getCurrentTime === "function") {{
+      updatePlaybackHighlight(player.getCurrentTime(), false);
+    }}
   }}
 
   function adjustOffset(delta) {{
@@ -1136,15 +1219,28 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       const adjStart = item.start + timeOffset;
       const adjEnd = item.end + timeOffset;
       const div = document.createElement("div");
-      div.className = "caption-line" + (isSynced && idx === activeCaptionIdx ? " active" : "");
+      let cls = "caption-line";
+      if (isSynced && idx === activeCaptionIdx) cls += " active";
+      if (!isSynced && idx === previewCaptionIdx) cls += " preview-active";
+      div.className = cls;
       div.id = "line-" + idx;
 
       const mainDiv = document.createElement("div");
       mainDiv.className = "caption-main";
       mainDiv.innerHTML = `<span class="caption-time">${{fmtTime(adjStart)}}</span><span>${{item.text}}</span>`;
       mainDiv.onclick = () => {{
-        if (player && player.seekTo) {{
-          player.seekTo(Math.max(0, adjStart), true);
+        if (!player || !player.seekTo) return;
+        const targetT = Math.max(0, adjStart);
+        if (!isSynced) {{
+          // Preserve paused state in Unsynced mode so user isn't forced to chase playback
+          const wasPlaying = (typeof player.getPlayerState === "function" && player.getPlayerState() === YT.PlayerState.PLAYING);
+          player.seekTo(targetT, true);
+          if (!wasPlaying && typeof player.pauseVideo === "function") {{
+            player.pauseVideo();
+          }}
+          updatePlaybackHighlight(targetT, false);
+        }} else {{
+          player.seekTo(targetT, true);
           player.playVideo();
         }}
       }};
@@ -1164,6 +1260,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
           isSynced = true;
           restoredFromCache = false;
           activeCaptionIdx = -1;
+          previewCaptionIdx = -1;
           if (!hasUserRange) {{
             rangeStart = Math.max(0, item.start + timeOffset);
             rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
@@ -1320,7 +1417,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     }}
   }}
 
-  /* Initialize state (attempting per-video cache restore first) */
   const hadCachedSync = restoreVideoSyncState();
   setTrainingView(trainingView);
   renderSyncBar();
@@ -1357,6 +1453,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
             rangeStart = captions[0].start;
             rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
             updateRangeUI();
+            updatePlaybackHighlight(0, false);
           }} else if (hadCachedSync) {{
             updatePlaybackHighlight(0, true);
           }}
@@ -1366,9 +1463,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     }});
   }};
 
-  function updatePlaybackHighlight(t, forceScroll = false) {{
-    if (!isSynced) return;
-    const effectiveT = t - timeOffset;
+  function findCaptionIndexAt(effectiveT) {{
     let found = -1;
     for (let i = 0; i < captions.length; i++) {{
       if (effectiveT >= captions[i].start && effectiveT < captions[i].end) {{
@@ -1384,7 +1479,24 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         }}
       }}
     }}
+    return found;
+  }}
 
+  function updatePlaybackHighlight(t, forceScroll = false) {{
+    if (!isSynced) {{
+      // Live Highlight Preview at 0.0s baseline (never auto-scrolls while Unsynced)
+      const found = findCaptionIndexAt(t);
+      if (found !== previewCaptionIdx && found !== -1) {{
+        if (previewCaptionIdx !== -1) {{
+          document.getElementById("line-" + previewCaptionIdx)?.classList.remove("preview-active");
+        }}
+        previewCaptionIdx = found;
+        document.getElementById("line-" + previewCaptionIdx)?.classList.add("preview-active");
+      }}
+      return;
+    }}
+
+    const found = findCaptionIndexAt(t - timeOffset);
     if (found !== activeCaptionIdx && found !== -1) {{
       if (activeCaptionIdx !== -1) {{
         const prev = document.getElementById("line-" + activeCaptionIdx);
