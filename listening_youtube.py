@@ -151,6 +151,23 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     width: 100%;
     overflow: hidden;
   }}
+
+  /* Top Stage Guidance Banner (Directly beneath URL bar) */
+  .stage-banner {{
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 7px 14px;
+    text-align: center;
+    letter-spacing: 0.01em;
+    flex-shrink: 0;
+  }}
+  .stage-banner.hidden {{
+    display: none;
+  }}
+
   .video-section {{
     background: #020617;
     flex-shrink: 0;
@@ -251,13 +268,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     gap: 3px;
   }}
   .group-label {{
-    font-size: 10px;
-    color: #94a3b8;
+    font-size: 10.5px;
+    color: #f8fafc;
+    font-weight: 500;
     white-space: nowrap;
-    margin-right: 1px;
+    margin-right: 2px;
   }}
-  .group-label.lag {{ color: #38bdf8; }}
-  .group-label.lead {{ color: #a78bfa; }}
   .nudge-btn {{
     background: var(--card);
     color: var(--text);
@@ -385,7 +401,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     padding: 4px 6px;
   }}
 
-  /* Hide everything outside the S-E training scope and hide S/E tag buttons */
   .transcript-area.training-active .caption-line:not(.in-range) {{
     display: none !important;
   }}
@@ -393,7 +408,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     display: none !important;
   }}
 
-  /* Spotlight Mode: Uniform font size (no layout jump), dimming + bold for focus */
+  /* Spotlight Mode */
   .transcript-area.training-active.view-spotlight .caption-line.in-range {{
     display: none;
     border: none;
@@ -419,7 +434,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     box-shadow: inset 3px 0 0 #2ba2bd;
   }}
 
-  /* Pure 1-Line Mode: Only the currently spoken line centered like overlaid subtitles */
+  /* Pure 1-Line Mode */
   .transcript-area.training-active.view-oneline .caption-line.in-range {{
     display: none;
   }}
@@ -451,27 +466,27 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   }}
   .line-actions {{
     display: flex;
-    gap: 4px;
+    gap: 5px;
     flex-shrink: 0;
     align-self: center;
   }}
   .tag-btn {{
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: 10.5px;
+    border-radius: 5px;
+    padding: 4px 9px;
+    font-size: 11px;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.12s;
   }}
   /* Color-coded S (Emerald) and E (Orange) buttons */
   .tag-btn.s-btn {{
-    background: rgba(16, 185, 129, 0.14);
+    background: rgba(16, 185, 129, 0.16);
     color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.45);
+    border: 1px solid rgba(16, 185, 129, 0.5);
   }}
   .transcript-area.awaiting-range .tag-btn.s-btn {{
-    background: rgba(16, 185, 129, 0.24);
-    border-color: rgba(16, 185, 129, 0.75);
+    background: rgba(16, 185, 129, 0.25);
+    border-color: rgba(16, 185, 129, 0.8);
   }}
   .tag-btn.s-btn:hover,
   .tag-btn.s-btn.is-start {{
@@ -481,13 +496,13 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   }}
 
   .tag-btn.e-btn {{
-    background: rgba(245, 158, 11, 0.14);
+    background: rgba(245, 158, 11, 0.16);
     color: #fbbf24;
-    border: 1px solid rgba(245, 158, 11, 0.45);
+    border: 1px solid rgba(245, 158, 11, 0.5);
   }}
   .transcript-area.awaiting-range .tag-btn.e-btn {{
-    background: rgba(245, 158, 11, 0.24);
-    border-color: rgba(245, 158, 11, 0.75);
+    background: rgba(245, 158, 11, 0.25);
+    border-color: rgba(245, 158, 11, 0.8);
   }}
   .tag-btn.e-btn:hover,
   .tag-btn.e-btn.is-end {{
@@ -501,7 +516,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     color: #fbbf24;
     border: 1px solid rgba(251, 191, 36, 0.6);
     font-weight: 700;
-    padding: 3px 9px;
+    padding: 4px 10px;
     font-size: 11px;
   }}
   .tag-btn:active {{
@@ -536,13 +551,11 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     min-height: 0;
     transition: opacity 0.22s ease, filter 0.22s ease;
   }}
-  /* Stage 1: Unsynced -> entire panel dimmed */
   .ninja-panel.locked-unsynced {{
     opacity: 0.34;
     pointer-events: none;
     filter: grayscale(0.45);
   }}
-  /* Stage 2: Synced, awaiting range -> Run, Next, Steps dimmed */
   .ninja-panel.awaiting-range .next-btn,
   .ninja-panel.awaiting-range .run-btn,
   .ninja-panel.awaiting-range .steps-header,
@@ -550,7 +563,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     opacity: 0.32;
     pointer-events: none;
   }}
-  /* Stop button dimmed whenever not actively running */
   .ninja-panel:not(.running-active) .stop-btn {{
     opacity: 0.32;
     pointer-events: none;
@@ -572,10 +584,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     background: rgba(56, 189, 248, 0.12);
     padding: 2px 8px;
     border-radius: 999px;
-  }}
-  .status-badge.prompt-badge {{
-    color: #fbbf24;
-    background: rgba(251, 191, 36, 0.16);
   }}
   .range-row {{
     display: grid;
@@ -601,8 +609,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   .mark-btn {{
     color: #fff;
     border: none;
-    padding: 5px 7px;
-    font-size: 11px;
+    padding: 6px 9px;
+    font-size: 11.5px;
     font-weight: 700;
     cursor: pointer;
     white-space: nowrap;
@@ -610,15 +618,21 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   .mark-btn.start-btn {{
     background: #059669;
   }}
+  .mark-btn.start-btn:hover {{
+    background: #10b981;
+  }}
   .mark-btn.end-btn {{
     background: #d97706;
+  }}
+  .mark-btn.end-btn:hover {{
+    background: #f59e0b;
   }}
   .mark-val {{
     flex: 1;
     text-align: center;
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
-    padding: 0 3px;
+    padding: 0 4px;
     font-weight: 600;
   }}
   .mark-val.start-val {{ color: #6ee7b7; }}
@@ -628,8 +642,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     color: var(--text);
     border: 1px solid #475569;
     border-radius: 6px;
-    padding: 5px 8px;
-    font-size: 11px;
+    padding: 6px 9px;
+    font-size: 11.5px;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
@@ -712,23 +726,48 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   .step-cc-on {{ color: #38bdf8; font-weight: 600; }}
   .step-cc-off {{ color: #64748b; }}
 
+  /* Instant Floating Tooltip (zero OS hover delay) */
+  .fast-tooltip {{
+    position: fixed;
+    z-index: 9999;
+    background: #020617;
+    color: #f8fafc;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
+    opacity: 0;
+    transition: opacity 0.08s ease;
+  }}
+  .fast-tooltip.visible {{
+    opacity: 1;
+  }}
+
   /* Landscape & Desktop Split-Pane */
   @media (min-width: 640px) and (orientation: landscape) {{
     .app-shell {{
       display: grid;
       grid-template-columns: minmax(340px, 46%) 1fr;
-      grid-template-rows: auto 1fr;
+      grid-template-rows: auto auto 1fr;
       grid-template-areas:
+        "banner banner"
         "video transcript"
         "ninja transcript";
       height: 100vh;
+    }}
+    .stage-banner {{
+      grid-area: banner;
     }}
     .video-section {{
       grid-area: video;
       border-right: 1px solid #1e293b;
     }}
     .player-wrap {{
-      max-height: min(35vh, 290px);
+      max-height: min(35vh, 280px);
     }}
     .ninja-panel {{
       grid-area: ninja;
@@ -808,7 +847,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 </head>
 <body>
 
+<div id="fast-tooltip" class="fast-tooltip"></div>
+
 <div class="app-shell">
+  <!-- Top Stage Guidance Banner -->
+  <div class="stage-banner" id="stage-banner">1. Play video &amp; tap Sync on the line you hear (or ✓ Sync OK)</div>
+
   <!-- 1. Video + Sync State Bar -->
   <div class="video-section">
     <div class="player-wrap">
@@ -834,25 +878,25 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   <div class="ninja-panel locked-unsynced" id="ninja-panel">
     <div class="ninja-header">
       <span>Ninja Protocol (0.6x Anchor)</span>
-      <span class="status-badge prompt-badge" id="status-badge">1. Tap Sync or Sync OK</span>
+      <span class="status-badge" id="status-badge">Locked</span>
     </div>
 
     <div class="range-row">
       <div class="mark-box start-box">
-        <button class="mark-btn start-btn" title="Mark Start at current video timestamp" onclick="markStartNow()">Mark start</button>
+        <button class="mark-btn start-btn" data-tip="Mark Start at current video timestamp" onclick="markStartNow()">Mark start</button>
         <span class="mark-val start-val" id="start-val">--:--.-</span>
       </div>
       <div class="mark-box end-box">
-        <button class="mark-btn end-btn" title="Mark End at current video timestamp" onclick="markEndNow()">Mark end</button>
+        <button class="mark-btn end-btn" data-tip="Mark End at current video timestamp" onclick="markEndNow()">Mark end</button>
         <span class="mark-val end-val" id="end-val">--:--.-</span>
       </div>
-      <button class="next-btn" onclick="moveToNextFragment()">Next →</button>
+      <button class="next-btn" data-tip="Advance to the next 30s fragment" onclick="moveToNextFragment()">Next →</button>
     </div>
 
     <div class="run-row">
       <button class="run-btn" onclick="runSequence(0)">▶ Run sequence</button>
       <button class="stop-btn" onclick="stopSequence()">■ Stop</button>
-      <button class="cfg-btn" onclick="openModal()" title="Customize steps">⚙</button>
+      <button class="cfg-btn" data-tip="Customize speed &amp; CC steps" onclick="openModal()">⚙</button>
     </div>
 
     <div class="steps-header">
@@ -893,6 +937,37 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   window.addEventListener("load", fitParentIframe);
   window.addEventListener("resize", fitParentIframe);
   setTimeout(fitParentIframe, 100);
+
+  /* Instant Custom Hover Tooltip Engine */
+  const tooltipEl = document.getElementById("fast-tooltip");
+  document.addEventListener("mouseover", (e) => {{
+    const target = e.target.closest("[data-tip]");
+    if (!target) {{
+      tooltipEl.classList.remove("visible");
+      return;
+    }}
+    const text = target.getAttribute("data-tip");
+    if (!text) return;
+    tooltipEl.textContent = text;
+    tooltipEl.classList.add("visible");
+
+    const rect = target.getBoundingClientRect();
+    const tipRect = tooltipEl.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - tipRect.width / 2;
+    left = Math.max(8, Math.min(window.innerWidth - tipRect.width - 8, left));
+    let top = rect.top - tipRect.height - 6;
+    if (top < 8) top = rect.bottom + 6;
+    tooltipEl.style.left = left + "px";
+    tooltipEl.style.top = top + "px";
+  }});
+  document.addEventListener("mouseout", (e) => {{
+    if (e.target.closest("[data-tip]")) {{
+      tooltipEl.classList.remove("visible");
+    }}
+  }});
+  document.addEventListener("mousedown", () => {{
+    tooltipEl.classList.remove("visible");
+  }});
 
   const captions = {captions_json};
   const videoId = "{video_id}";
@@ -943,6 +1018,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   let userScrolling = false;
   let scrollTimeout = null;
 
+  const stageBannerEl = document.getElementById("stage-banner");
   const listEl = document.getElementById("caption-list");
   const areaEl = document.getElementById("transcript-area");
   const metaBarEl = document.getElementById("meta-bar");
@@ -1054,18 +1130,20 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       // Stage 1: Unsynced
       ninjaPanelEl.classList.add("locked-unsynced");
       ninjaPanelEl.classList.remove("awaiting-range");
-      statusBadge.classList.add("prompt-badge");
-      statusBadge.textContent = "1. Tap Sync or Sync OK";
+      statusBadge.textContent = "Step 1: Sync";
+      stageBannerEl.classList.remove("hidden");
+      stageBannerEl.textContent = "1. Play video & tap Sync on the line you hear (or ✓ Sync OK)";
     }} else if (!hasUserRange) {{
       // Stage 2: Synced, awaiting Start/End window selection
       ninjaPanelEl.classList.remove("locked-unsynced");
       ninjaPanelEl.classList.add("awaiting-range");
-      statusBadge.classList.add("prompt-badge");
-      statusBadge.textContent = "2. Mark start (S) or end (E)";
+      statusBadge.textContent = "Step 2: S / E";
+      stageBannerEl.classList.remove("hidden");
+      stageBannerEl.textContent = "2. Mark start (S) or end (E)";
     }} else {{
       // Stage 3: Ready or Running
       ninjaPanelEl.classList.remove("locked-unsynced", "awaiting-range");
-      statusBadge.classList.remove("prompt-badge");
+      stageBannerEl.classList.add("hidden");
       if (!isRunning) {{
         statusBadge.textContent = "Ready";
       }}
@@ -1078,7 +1156,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       metaBarEl.innerHTML = `
         <div class="meta-top">
           <div class="time-display" id="time-display">${{curTimeText}}</div>
-          <button class="sync-ok-btn" title="Accept current 0.0s subtitle timing as synced" onclick="acceptSyncAsIs()">✓ Sync OK</button>
+          <button class="sync-ok-btn" data-tip="Accept current 0.0s subtitle timing as synced" onclick="acceptSyncAsIs()">✓ Sync OK</button>
         </div>
       `;
     }} else {{
@@ -1089,19 +1167,19 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
           <div class="time-display" id="time-display">${{curTimeText}}</div>
           <div>
             ${{savedHtml}}<span class="offset-badge">${{sign}}${{timeOffset.toFixed(1)}}s</span>
-            <button class="unsync-btn" title="Clear saved sync and reset" onclick="unsyncAll()">Unsync</button>
+            <button class="unsync-btn" data-tip="Clear saved sync and reset" onclick="unsyncAll()">Unsync</button>
           </div>
         </div>
         <div class="sync-nudge-grid">
           <div class="nudge-group">
-            <span class="group-label lag">Sub is LAGGING by:</span>
+            <span class="group-label">Sub is LAGGING by:</span>
             <button class="nudge-btn" onclick="adjustOffset(-1.0)">1s</button>
             <button class="nudge-btn" onclick="adjustOffset(-0.5)">.5s</button>
             <button class="nudge-btn" onclick="adjustOffset(-0.2)">.2s</button>
             <button class="nudge-btn" onclick="adjustOffset(-0.1)">.1s</button>
           </div>
           <div class="nudge-group">
-            <span class="group-label lead">Sub is LEADING by:</span>
+            <span class="group-label">Sub is LEADING by:</span>
             <button class="nudge-btn" onclick="adjustOffset(0.1)">.1s</button>
             <button class="nudge-btn" onclick="adjustOffset(0.2)">.2s</button>
             <button class="nudge-btn" onclick="adjustOffset(0.5)">.5s</button>
@@ -1279,7 +1357,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         const syncBtn = document.createElement("button");
         syncBtn.className = "tag-btn sync-line-btn";
         syncBtn.textContent = "Sync";
-        syncBtn.title = "Sync subtitles to this line right now";
+        syncBtn.setAttribute("data-tip", "Sync subtitles to this line right now");
         syncBtn.onclick = (e) => {{
           e.stopPropagation();
           if (!player || typeof player.getCurrentTime !== "function") return;
@@ -1300,7 +1378,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         const startBtn = document.createElement("button");
         startBtn.className = "tag-btn s-btn";
         startBtn.textContent = "S";
-        startBtn.title = "Mark Start at this line";
+        startBtn.setAttribute("data-tip", "Mark Start at this line");
         startBtn.onclick = (e) => {{
           e.stopPropagation();
           setStartBoundary(adjStart);
@@ -1309,7 +1387,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
         const endBtn = document.createElement("button");
         endBtn.className = "tag-btn e-btn";
         endBtn.textContent = "E";
-        endBtn.title = "Mark End at this line";
+        endBtn.setAttribute("data-tip", "Mark End at this line");
         endBtn.onclick = (e) => {{
           e.stopPropagation();
           setEndBoundary(adjEnd);
