@@ -170,46 +170,30 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   /* Meta & Sync Calibration Bar */
   .meta-bar {{
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
     padding: 4px 8px;
     background: var(--panel);
     border-bottom: 1px solid #1e293b;
     font-size: 11px;
     flex-shrink: 0;
+    gap: 4px;
+  }}
+  .meta-top {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     gap: 6px;
-    min-height: 30px;
+    min-height: 22px;
   }}
   .time-display {{
     color: #94a3b8;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }}
-  .sync-controls {{
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }}
   .unsync-hint {{
     color: #fbbf24;
     font-size: 11px;
     font-weight: 600;
-  }}
-  .nudge-btn {{
-    background: var(--card);
-    color: var(--text);
-    border: 1px solid #334155;
-    border-radius: 4px;
-    padding: 2px 5px;
-    font-size: 10.5px;
-    cursor: pointer;
-    font-variant-numeric: tabular-nums;
-  }}
-  .nudge-btn:active {{
-    background: var(--accent);
-    color: #fff;
   }}
   .unsync-btn {{
     background: rgba(251, 191, 36, 0.14);
@@ -220,13 +204,47 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     font-size: 10.5px;
     font-weight: 600;
     cursor: pointer;
-    margin-right: 2px;
   }}
   .offset-badge {{
     color: #38bdf8;
     font-weight: 700;
-    padding: 0 4px;
+    padding: 0 5px;
     font-variant-numeric: tabular-nums;
+    font-size: 11px;
+  }}
+  .sync-nudge-grid {{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+  }}
+  .nudge-group {{
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }}
+  .group-label {{
+    font-size: 10px;
+    color: #94a3b8;
+    white-space: nowrap;
+    margin-right: 1px;
+  }}
+  .group-label.lag {{ color: #38bdf8; }}
+  .group-label.lead {{ color: #a78bfa; }}
+  .nudge-btn {{
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 10.5px;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }}
+  .nudge-btn:active {{
+    background: var(--accent);
+    color: #fff;
   }}
 
   /* Quiet, Low-Distraction Transcript Area */
@@ -485,7 +503,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       border-right: 1px solid #1e293b;
     }}
     .player-wrap {{
-      max-height: min(36vh, 300px);
+      max-height: min(35vh, 290px);
     }}
     .ninja-panel {{
       grid-area: ninja;
@@ -571,10 +589,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     <div class="player-wrap">
       <div id="yt-player"></div>
     </div>
-    <div class="meta-bar">
-      <div class="time-display" id="time-display">00:00 / 00:00</div>
-      <div class="sync-controls" id="sync-controls"></div>
-    </div>
+    <div class="meta-bar" id="meta-bar"></div>
   </div>
 
   <!-- 2. Quiet Transcript Pane -->
@@ -679,7 +694,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   let player = null;
   let activeCaptionIdx = -1;
 
-  // Sync State Machine: starts UNSYNCED (auto-scroll frozen, per-line Sync visible)
   let isSynced = false;
   let timeOffset = 0.0;
 
@@ -695,8 +709,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   const listEl = document.getElementById("caption-list");
   const areaEl = document.getElementById("transcript-area");
-  const timeEl = document.getElementById("time-display");
-  const syncControlsEl = document.getElementById("sync-controls");
+  const metaBarEl = document.getElementById("meta-bar");
   const startValEl = document.getElementById("start-val");
   const endValEl = document.getElementById("end-val");
   const statusBadge = document.getElementById("status-badge");
@@ -720,21 +733,40 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   }}
 
   function renderSyncBar() {{
+    const curTimeText = document.getElementById("time-display")?.textContent || "00:00 / 00:00";
     if (!isSynced) {{
-      syncControlsEl.innerHTML = `<span class="unsync-hint">⏸ Scroll locked — tap Sync when heard</span>`;
+      metaBarEl.innerHTML = `
+        <div class="meta-top">
+          <div class="time-display" id="time-display">${{curTimeText}}</div>
+          <span class="unsync-hint">⏸ Scroll locked — tap Sync when heard</span>
+        </div>
+      `;
     }} else {{
       const sign = timeOffset >= 0 ? "+" : "";
-      syncControlsEl.innerHTML = `
-        <button class="unsync-btn" onclick="unsyncAll()">Unsync</button>
-        <button class="nudge-btn" onclick="adjustOffset(-1.0)">-1</button>
-        <button class="nudge-btn" onclick="adjustOffset(-0.5)">-.5</button>
-        <button class="nudge-btn" onclick="adjustOffset(-0.2)">-.2</button>
-        <button class="nudge-btn" onclick="adjustOffset(-0.1)">-.1</button>
-        <span class="offset-badge">${{sign}}${{timeOffset.toFixed(1)}}s</span>
-        <button class="nudge-btn" onclick="adjustOffset(0.1)">+.1</button>
-        <button class="nudge-btn" onclick="adjustOffset(0.2)">+.2</button>
-        <button class="nudge-btn" onclick="adjustOffset(0.5)">+.5</button>
-        <button class="nudge-btn" onclick="adjustOffset(1.0)">+1</button>
+      metaBarEl.innerHTML = `
+        <div class="meta-top">
+          <div class="time-display" id="time-display">${{curTimeText}}</div>
+          <div>
+            <span class="offset-badge">${{sign}}${{timeOffset.toFixed(1)}}s</span>
+            <button class="unsync-btn" onclick="unsyncAll()">Unsync</button>
+          </div>
+        </div>
+        <div class="sync-nudge-grid">
+          <div class="nudge-group">
+            <span class="group-label lag">Sub is LAGGING by:</span>
+            <button class="nudge-btn" onclick="adjustOffset(-1.0)">1s</button>
+            <button class="nudge-btn" onclick="adjustOffset(-0.5)">.5s</button>
+            <button class="nudge-btn" onclick="adjustOffset(-0.2)">.2s</button>
+            <button class="nudge-btn" onclick="adjustOffset(-0.1)">.1s</button>
+          </div>
+          <div class="nudge-group">
+            <span class="group-label lead">Sub is LEADING by:</span>
+            <button class="nudge-btn" onclick="adjustOffset(0.1)">.1s</button>
+            <button class="nudge-btn" onclick="adjustOffset(0.2)">.2s</button>
+            <button class="nudge-btn" onclick="adjustOffset(0.5)">.5s</button>
+            <button class="nudge-btn" onclick="adjustOffset(1.0)">1s</button>
+          </div>
+        </div>
       `;
     }}
   }}
@@ -998,7 +1030,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     if (!player || typeof player.getCurrentTime !== "function") return;
     const t = player.getCurrentTime();
     const d = player.getDuration();
-    timeEl.textContent = `${{fmtTime(t)}} / ${{fmtTime(d)}}`;
+    const timeEl = document.getElementById("time-display");
+    if (timeEl) timeEl.textContent = `${{fmtTime(t)}} / ${{fmtTime(d)}}`;
 
     if (isRunning && !stepTransitionLock && player.getPlayerState() === YT.PlayerState.PLAYING) {{
       if (t >= rangeEnd) {{
@@ -1007,7 +1040,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       }}
     }}
 
-    // Only highlight and auto-scroll AFTER Sync has been established
     if (!isSynced) return;
 
     const effectiveT = t - timeOffset;
