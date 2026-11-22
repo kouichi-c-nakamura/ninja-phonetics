@@ -300,6 +300,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     opacity: 0.22;
     pointer-events: none;
   }}
+  .app-shell.sequence-running .protocol-select,
   .app-shell.sequence-running .mark-btn,
   .app-shell.sequence-running .next-btn,
   .app-shell.sequence-running .run-btn,
@@ -597,10 +598,28 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     font-size: 12px;
     font-weight: 700;
     color: #e2e8f0;
     flex-shrink: 0;
+  }}
+  .protocol-select {{
+    background: var(--card);
+    color: #f8fafc;
+    border: 1px solid #334155;
+    border-radius: 5px;
+    padding: 3px 7px;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    max-width: 66%;
+    transition: opacity 0.2s, border-color 0.14s;
+  }}
+  .protocol-select:hover,
+  .protocol-select:focus {{
+    border-color: #64748b;
+    outline: none;
   }}
   .status-badge {{
     font-size: 11px;
@@ -609,6 +628,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     background: rgba(148, 163, 184, 0.14);
     padding: 2px 8px;
     border-radius: 999px;
+    white-space: nowrap;
   }}
   .range-row {{
     display: grid;
@@ -844,6 +864,25 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     justify-content: space-between;
     align-items: center;
   }}
+  .modal-name-bar {{
+    padding: 8px 12px;
+    background: #0f172a;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }}
+  .modal-name-bar input {{
+    flex: 1;
+    background: #1e293b;
+    color: #fff;
+    border: 1px solid #475569;
+    border-radius: 5px;
+    padding: 5px 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+  }}
   .modal-body {{
     padding: 8px 12px;
     overflow-y: auto;
@@ -870,7 +909,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     border-top: 1px solid #334155;
     display: flex;
     gap: 6px;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
   }}
 </style>
 </head>
@@ -906,7 +946,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   <!-- 3. Ninja Controls (3-Stage Progressive Unlock) -->
   <div class="ninja-panel locked-unsynced" id="ninja-panel">
     <div class="ninja-header">
-      <span>Ninja Protocol (0.6x Anchor)</span>
+      <select class="protocol-select" id="protocol-select" data-tip="Switch training protocol" onchange="onProtocolChange(this.value)"></select>
       <span class="status-badge" id="status-badge">Step 1: Sync</span>
     </div>
 
@@ -925,7 +965,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     <div class="run-row">
       <button class="run-btn" onclick="runSequence(0)">▶ Run sequence</button>
       <button class="stop-btn" onclick="stopSequence()">■ Stop</button>
-      <button class="cfg-btn" data-tip="Customize speed &amp; CC steps" onclick="openModal()">⚙</button>
+      <button class="cfg-btn" data-tip="Customize or save named sequence" onclick="openModal()">⚙</button>
     </div>
 
     <div class="steps-header">
@@ -940,14 +980,23 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 <div class="modal-backdrop" id="cfg-modal">
   <div class="modal-box">
     <div class="modal-head">
-      <span>Customize Ninja Steps</span>
+      <span>Customize &amp; Save Sequence</span>
       <button class="nudge-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-name-bar">
+      <span style="color:#94a3b8;font-weight:600;">Name:</span>
+      <input type="text" id="custom-seq-name" placeholder="e.g. Custom Sequence" />
     </div>
     <div class="modal-body" id="modal-steps-body"></div>
     <div class="modal-foot">
-      <button class="nudge-btn" onclick="addStepRow()">+ Add</button>
-      <button class="nudge-btn" onclick="resetDefaultSteps()">Reset</button>
-      <button class="nudge-btn" style="background:#2563eb;border-color:#2563eb;" onclick="saveModalSteps()">Save</button>
+      <div>
+        <button class="nudge-btn" id="del-custom-btn" style="color:#f87171;border-color:rgba(239,68,68,0.45);display:none;" onclick="deleteCurrentCustomProtocol()">Delete</button>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="nudge-btn" onclick="addStepRow()">+ Add</button>
+        <button class="nudge-btn" onclick="resetDraftToSelected()">Reset</button>
+        <button class="nudge-btn" style="background:#2563eb;border-color:#2563eb;" onclick="saveModalSteps()">Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1002,31 +1051,98 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   const videoId = "{video_id}";
   const DEFAULT_SPAN = 30.0;
   const SYNC_CACHE_KEY = "ninja_sync_cache_v1";
+  const CUSTOM_PROTOCOLS_KEY = "ninja_custom_protocols_v1";
+  const SELECTED_PROTOCOL_KEY = "ninja_selected_protocol_v1";
   const MAX_CACHE_ENTRIES = 100;
 
-  const DEFAULT_STEPS = [
-    {{ speed: 1.0, cc: false }},
-    {{ speed: 1.0, cc: true }},
-    {{ speed: 0.6, cc: true }},
-    {{ speed: 0.6, cc: true }},
-    {{ speed: 0.6, cc: true }},
-    {{ speed: 0.7, cc: true }},
-    {{ speed: 0.8, cc: true }},
-    {{ speed: 0.9, cc: true }},
-    {{ speed: 1.0, cc: false }},
-    {{ speed: 1.1, cc: false }},
-    {{ speed: 1.2, cc: false }},
-    {{ speed: 1.3, cc: false }},
-    {{ speed: 1.4, cc: false }},
-    {{ speed: 1.5, cc: false }},
-    {{ speed: 1.6, cc: false }},
-    {{ speed: 1.7, cc: false }},
-    {{ speed: 1.8, cc: false }},
-    {{ speed: 1.9, cc: false }},
-    {{ speed: 2.0, cc: false }}
-  ];
+  function buildShadowingSteps() {{
+    const list = [
+      {{ speed: 1.0, cc: false }},
+      {{ speed: 1.0, cc: true }}
+    ];
+    for (const spd of [0.5, 0.6, 0.7, 0.8]) {{
+      for (let r = 0; r < 3; r++) list.push({{ speed: spd, cc: true }});
+    }}
+    for (const spd of [0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]) {{
+      for (let r = 0; r < 3; r++) list.push({{ speed: spd, cc: false }});
+    }}
+    return list;
+  }}
 
-  let steps = JSON.parse(localStorage.getItem("ninja_steps_v1") || "null") || [...DEFAULT_STEPS];
+  const BUILTIN_PROTOCOLS = {{
+    "anchor_06": {{
+      name: "Ninja Protocol (0.6x Anchor)",
+      steps: [
+        {{ speed: 1.0, cc: false }},
+        {{ speed: 1.0, cc: true }},
+        {{ speed: 0.6, cc: true }},
+        {{ speed: 0.6, cc: true }},
+        {{ speed: 0.6, cc: true }},
+        {{ speed: 0.7, cc: true }},
+        {{ speed: 0.8, cc: true }},
+        {{ speed: 0.9, cc: true }},
+        {{ speed: 1.0, cc: false }},
+        {{ speed: 1.1, cc: false }},
+        {{ speed: 1.2, cc: false }},
+        {{ speed: 1.3, cc: false }},
+        {{ speed: 1.4, cc: false }},
+        {{ speed: 1.5, cc: false }},
+        {{ speed: 1.6, cc: false }},
+        {{ speed: 1.7, cc: false }},
+        {{ speed: 1.8, cc: false }},
+        {{ speed: 1.9, cc: false }},
+        {{ speed: 2.0, cc: false }}
+      ]
+    }},
+    "express": {{
+      name: "Ninja Protocol (Express)",
+      steps: [
+        {{ speed: 1.0, cc: false }},
+        {{ speed: 0.6, cc: true }},
+        {{ speed: 1.0, cc: false }},
+        {{ speed: 1.3, cc: false }},
+        {{ speed: 1.5, cc: false }},
+        {{ speed: 1.6, cc: false }},
+        {{ speed: 1.7, cc: false }},
+        {{ speed: 1.8, cc: false }},
+        {{ speed: 1.9, cc: false }},
+        {{ speed: 2.0, cc: false }}
+      ]
+    }},
+    "shadowing": {{
+      name: "Ninja Shadowing Protocol",
+      steps: buildShadowingSteps()
+    }}
+  }};
+
+  function loadCustomProtocols() {{
+    try {{
+      return JSON.parse(localStorage.getItem(CUSTOM_PROTOCOLS_KEY) || "{{}}");
+    }} catch (e) {{
+      return {{}};
+    }}
+  }}
+
+  function saveCustomProtocols(obj) {{
+    try {{
+      localStorage.setItem(CUSTOM_PROTOCOLS_KEY, JSON.stringify(obj));
+    }} catch (e) {{}}
+  }}
+
+  let customProtocols = loadCustomProtocols();
+  let selectedProtocolId = localStorage.getItem(SELECTED_PROTOCOL_KEY) || "anchor_06";
+
+  function getProtocolById(pid) {{
+    if (BUILTIN_PROTOCOLS[pid]) return BUILTIN_PROTOCOLS[pid];
+    if (customProtocols[pid]) return customProtocols[pid];
+    return BUILTIN_PROTOCOLS["anchor_06"];
+  }}
+
+  if (!BUILTIN_PROTOCOLS[selectedProtocolId] && !customProtocols[selectedProtocolId]) {{
+    selectedProtocolId = "anchor_06";
+  }}
+
+  let steps = getProtocolById(selectedProtocolId).steps.map(s => ({{ ...s }}));
   let trainingView = localStorage.getItem("ninja_training_view") || "spotlight";
   let player = null;
   let activeCaptionIdx = -1;
@@ -1051,6 +1167,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   const appShellEl = document.getElementById("app-shell");
   const stageBannerEl = document.getElementById("stage-banner");
+  const protocolSelectEl = document.getElementById("protocol-select");
   const listEl = document.getElementById("caption-list");
   const areaEl = document.getElementById("transcript-area");
   const metaBarEl = document.getElementById("meta-bar");
@@ -1060,6 +1177,44 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   const statusBadge = document.getElementById("status-badge");
   const stepsListEl = document.getElementById("steps-list");
   const blindStepLabel = document.getElementById("blind-step-label");
+
+  function renderProtocolDropdown() {{
+    protocolSelectEl.innerHTML = "";
+    for (const [id, proto] of Object.entries(BUILTIN_PROTOCOLS)) {{
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = proto.name;
+      protocolSelectEl.appendChild(opt);
+    }}
+    for (const [id, proto] of Object.entries(customProtocols)) {{
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = `★ ${{proto.name}}`;
+      protocolSelectEl.appendChild(opt);
+    }}
+    const newCustomOpt = document.createElement("option");
+    newCustomOpt.value = "__new_custom__";
+    newCustomOpt.textContent = "+ Custom sequence...";
+    protocolSelectEl.appendChild(newCustomOpt);
+
+    protocolSelectEl.value = selectedProtocolId;
+  }}
+
+  function onProtocolChange(val) {{
+    if (isRunning) {{
+      protocolSelectEl.value = selectedProtocolId;
+      return;
+    }}
+    if (val === "__new_custom__") {{
+      protocolSelectEl.value = selectedProtocolId;
+      openModal(true);
+      return;
+    }}
+    selectedProtocolId = val;
+    localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocolId);
+    steps = getProtocolById(selectedProtocolId).steps.map(s => ({{ ...s }}));
+    renderStepsList();
+  }}
 
   function loadSyncCache() {{
     try {{
@@ -1563,6 +1718,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   }}
 
   const hadCachedSync = restoreVideoSyncState();
+  renderProtocolDropdown();
   setTrainingView(trainingView);
   renderSyncBar();
   renderCaptions();
@@ -1666,7 +1822,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     const timeEl = document.getElementById("time-display");
     if (timeEl) timeEl.textContent = `${{fmtTime(t)}} / ${{fmtTime(d)}}`;
 
-    // Periodically persist playback position (every ~3s when synced & browsing)
     if (isSynced && !isRunning && player.getPlayerState() === YT.PlayerState.PLAYING) {{
       const wholeSec = Math.floor(t);
       if (Math.abs(wholeSec - lastSavedPlaybackSec) >= 3) {{
@@ -1685,16 +1840,35 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     updatePlaybackHighlight(t, false);
   }}
 
+  /* Protocol Customization & Named Sequence Modal */
   let draftSteps = [];
-  function openModal() {{
+  let editingCustomId = null;
+
+  function openModal(createNew = false) {{
     if (isRunning) return;
+    const nameInput = document.getElementById("custom-seq-name");
+    const delBtn = document.getElementById("del-custom-btn");
+
+    if (!createNew && customProtocols[selectedProtocolId]) {{
+      editingCustomId = selectedProtocolId;
+      nameInput.value = customProtocols[selectedProtocolId].name;
+      delBtn.style.display = "inline-block";
+    }} else {{
+      editingCustomId = null;
+      const baseName = getProtocolById(selectedProtocolId).name;
+      nameInput.value = createNew ? "Custom Sequence" : `${{baseName}} (Custom)`;
+      delBtn.style.display = "none";
+    }}
+
     draftSteps = steps.map(s => ({{ ...s }}));
     renderModalBody();
     document.getElementById("cfg-modal").classList.add("open");
   }}
+
   function closeModal() {{
     document.getElementById("cfg-modal").classList.remove("open");
   }}
+
   function renderModalBody() {{
     const body = document.getElementById("modal-steps-body");
     body.innerHTML = "";
@@ -1716,28 +1890,58 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       body.appendChild(r);
     }});
   }}
+
   function moveDraft(idx, dir) {{
     const target = idx + dir;
     if (target < 0 || target >= draftSteps.length) return;
     [draftSteps[idx], draftSteps[target]] = [draftSteps[target], draftSteps[idx]];
     renderModalBody();
   }}
+
   function delDraft(idx) {{
     draftSteps.splice(idx, 1);
     renderModalBody();
   }}
+
   function addStepRow() {{
     draftSteps.push({{ speed: 1.0, cc: false }});
     renderModalBody();
   }}
-  function resetDefaultSteps() {{
-    draftSteps = DEFAULT_STEPS.map(s => ({{ ...s }}));
+
+  function resetDraftToSelected() {{
+    draftSteps = getProtocolById(selectedProtocolId).steps.map(s => ({{ ...s }}));
     renderModalBody();
   }}
+
   function saveModalSteps() {{
     if (draftSteps.length === 0) return;
-    steps = draftSteps;
-    localStorage.setItem("ninja_steps_v1", JSON.stringify(steps));
+    const rawName = document.getElementById("custom-seq-name").value.trim();
+    const seqName = rawName || "Custom Sequence";
+    const targetId = editingCustomId || ("custom_" + Date.now());
+
+    customProtocols[targetId] = {{
+      name: seqName,
+      steps: draftSteps.map(s => ({{ ...s }}))
+    }};
+    saveCustomProtocols(customProtocols);
+
+    selectedProtocolId = targetId;
+    localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocolId);
+    steps = customProtocols[targetId].steps.map(s => ({{ ...s }}));
+
+    renderProtocolDropdown();
+    renderStepsList();
+    closeModal();
+  }}
+
+  function deleteCurrentCustomProtocol() {{
+    if (!editingCustomId || !customProtocols[editingCustomId]) return;
+    delete customProtocols[editingCustomId];
+    saveCustomProtocols(customProtocols);
+    selectedProtocolId = "anchor_06";
+    localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocolId);
+    steps = getProtocolById(selectedProtocolId).steps.map(s => ({{ ...s }}));
+    renderProtocolDropdown();
     renderStepsList();
     closeModal();
   }}
