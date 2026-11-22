@@ -112,17 +112,13 @@ def fetch_transcript(video_id: str, merge_sentences: bool = True, languages: tup
     return merge_into_sentences(items) if merge_sentences else items
 
 
-def build_player_html(video_id: str, captions: list[dict], source_url: str) -> str:
-    captions_json = json.dumps(captions, ensure_ascii=False)
-    source_url_json = json.dumps(source_url, ensure_ascii=False)
-    return f"""
-<!DOCTYPE html>
+HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <style>
-  :root {{
+  :root {
     --bg: #0f172a;
     --panel: #0b1120;
     --card: #1e293b;
@@ -134,9 +130,9 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     --danger: #ef4444;
     --text: #e2e8f0;
     --muted: #64748b;
-  }}
-  * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
-  html, body {{
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
     margin: 0;
     padding: 0;
     width: 100%;
@@ -145,18 +141,17 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", Arial, sans-serif;
     overflow: hidden;
-  }}
+  }
 
-  .app-shell {{
+  .app-shell {
     display: flex;
     flex-direction: column;
     height: 100vh;
     width: 100%;
     overflow: hidden;
-  }}
+  }
 
-  /* Top Stage Guidance Banner */
-  .stage-banner {{
+  .stage-banner {
     background: #1e293b;
     border-bottom: 1px solid #334155;
     color: #ffffff;
@@ -166,31 +161,30 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     text-align: center;
     letter-spacing: 0.01em;
     flex-shrink: 0;
-  }}
-  .stage-banner.hidden {{
+  }
+  .stage-banner.hidden {
     display: none;
-  }}
+  }
 
-  .video-section {{
+  .video-section {
     background: #020617;
     flex-shrink: 0;
-  }}
-  .player-wrap {{
+  }
+  .player-wrap {
     position: relative;
     width: 100%;
     aspect-ratio: 16 / 9;
     max-height: 205px;
     background: #000;
-  }}
-  .player-wrap iframe {{
+  }
+  .player-wrap iframe {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-  }}
+  }
 
-  /* Meta & Sync Calibration Bar */
-  .meta-bar {{
+  .meta-bar {
     display: flex;
     flex-direction: column;
     padding: 4px 8px;
@@ -199,20 +193,20 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-size: 11px;
     flex-shrink: 0;
     gap: 4px;
-  }}
-  .meta-top {{
+  }
+  .meta-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 6px;
     min-height: 26px;
-  }}
-  .time-display {{
+  }
+  .time-display {
     color: #94a3b8;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-  }}
-  .sync-ok-btn {{
+  }
+  .sync-ok-btn {
     background: #10b981;
     color: #020617;
     border: none;
@@ -225,14 +219,14 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     white-space: nowrap;
     box-shadow: 0 2px 8px rgba(16, 185, 129, 0.38);
     transition: background 0.14s, transform 0.08s;
-  }}
-  .sync-ok-btn:hover {{
+  }
+  .sync-ok-btn:hover {
     background: #34d399;
-  }}
-  .sync-ok-btn:active {{
+  }
+  .sync-ok-btn:active {
     transform: translateY(1px);
-  }}
-  .unsync-btn {{
+  }
+  .unsync-btn {
     background: rgba(251, 191, 36, 0.14);
     color: #fbbf24;
     border: 1px solid rgba(251, 191, 36, 0.4);
@@ -242,15 +236,15 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-weight: 600;
     cursor: pointer;
     transition: opacity 0.2s;
-  }}
-  .offset-badge {{
+  }
+  .offset-badge {
     color: #e2e8f0;
     font-weight: 700;
     padding: 0 5px;
     font-variant-numeric: tabular-nums;
     font-size: 11px;
-  }}
-  .saved-tag {{
+  }
+  .saved-tag {
     font-size: 9.5px;
     color: #34d399;
     background: rgba(16, 185, 129, 0.14);
@@ -258,28 +252,28 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     border-radius: 4px;
     padding: 1px 5px;
     margin-right: 4px;
-  }}
-  .sync-nudge-grid {{
+  }
+  .sync-nudge-grid {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 4px;
     transition: opacity 0.2s;
-  }}
-  .nudge-group {{
+  }
+  .nudge-group {
     display: flex;
     align-items: center;
     gap: 3px;
-  }}
-  .group-label {{
+  }
+  .group-label {
     font-size: 10.5px;
     color: #f8fafc;
     font-weight: 500;
     white-space: nowrap;
     margin-right: 2px;
-  }}
-  .nudge-btn {{
+  }
+  .nudge-btn {
     background: var(--card);
     color: var(--text);
     border: 1px solid #334155;
@@ -288,38 +282,34 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-size: 10.5px;
     cursor: pointer;
     font-variant-numeric: tabular-nums;
-  }}
-  .nudge-btn:active {{
+  }
+  .nudge-btn:active {
     background: var(--accent);
     color: #fff;
-  }}
+  }
 
-  /* =========================================================
-     LOCK / DIM SETUP CONTROLS DURING ACTIVE SEQUENCE
-     ========================================================= */
   .app-shell.sequence-running .sync-nudge-grid,
   .app-shell.sequence-running .unsync-btn,
-  .app-shell.sequence-running .saved-tag {{
+  .app-shell.sequence-running .saved-tag {
     opacity: 0.22;
     pointer-events: none;
-  }}
+  }
   .app-shell.sequence-running .protocol-select,
   .app-shell.sequence-running .mark-btn,
   .app-shell.sequence-running .next-btn,
   .app-shell.sequence-running .run-btn,
-  .app-shell.sequence-running .cfg-btn {{
+  .app-shell.sequence-running .cfg-btn {
     opacity: 0.24;
     pointer-events: none;
-  }}
-  .app-shell.sequence-running .mark-box {{
+  }
+  .app-shell.sequence-running .mark-box {
     border-color: #1e293b;
-  }}
-  .app-shell.sequence-running .mark-val {{
+  }
+  .app-shell.sequence-running .mark-val {
     opacity: 0.55;
-  }}
+  }
 
-  /* Quiet, Low-Distraction Transcript Area */
-  .transcript-area {{
+  .transcript-area {
     flex: 1.15;
     overflow-y: auto;
     padding: 6px 8px;
@@ -330,11 +320,11 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     background: #0b1120;
     display: flex;
     flex-direction: column;
-  }}
-  .caption-list {{
+  }
+  .caption-list {
     width: 100%;
-  }}
-  .caption-line {{
+  }
+  .caption-line {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
@@ -349,63 +339,57 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     line-height: 1.45;
     cursor: pointer;
     transition: background 0.14s, opacity 0.16s;
-  }}
-  .caption-line:last-child {{
+  }
+  .caption-line:last-child {
     border-bottom: none;
-  }}
+  }
 
-  /* Live Highlight Preview While Unsynced (0.0s baseline, scroll stays locked) */
-  .caption-line.preview-active {{
+  .caption-line.preview-active {
     background: rgba(43, 162, 189, 0.11);
     box-shadow: inset 2px 0 0 rgba(43, 162, 189, 0.7);
     color: #f8fafc;
-  }}
+  }
 
-  /* Single Unified Rounded Enclosure for Selected Range (Browsing Mode) */
-  .transcript-area:not(.training-active) .caption-line.in-range {{
+  .transcript-area:not(.training-active) .caption-line.in-range {
     background: rgba(148, 163, 184, 0.08);
     border-left: 1.5px solid rgba(148, 163, 184, 0.42);
     border-right: 1.5px solid rgba(148, 163, 184, 0.42);
     border-bottom-color: transparent;
-  }}
+  }
   .transcript-area:not(.training-active) .caption-line:not(.in-range) + .caption-line.in-range,
-  .transcript-area:not(.training-active) .caption-line.in-range:first-child {{
+  .transcript-area:not(.training-active) .caption-line.in-range:first-child {
     border-top: 1.5px solid rgba(16, 185, 129, 0.65);
     border-top-left-radius: 8px;
     border-top-right-radius: 8px;
     margin-top: 3px;
-  }}
+  }
   .transcript-area:not(.training-active) .caption-line.in-range:has(+ .caption-line:not(.in-range)),
-  .transcript-area:not(.training-active) .caption-line.in-range:last-child {{
+  .transcript-area:not(.training-active) .caption-line.in-range:last-child {
     border-bottom: 1.5px solid rgba(245, 158, 11, 0.65);
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;
     margin-bottom: 3px;
-  }}
+  }
 
-  /* Active Playback Line in Synced Browsing Mode */
-  .transcript-area:not(.training-active) .caption-line.active {{
+  .transcript-area:not(.training-active) .caption-line.active {
     background: rgba(43, 162, 189, 0.24);
     box-shadow: inset 3px 0 0 #2ba2bd;
     color: #ffffff;
     font-weight: 600;
-  }}
+  }
 
-  /* =========================================================
-     FOCUSED TRAINING STAGE (isRunning === true)
-     ========================================================= */
-  .training-toolbar {{
+  .training-toolbar {
     display: none;
     justify-content: flex-end;
     align-items: center;
     gap: 6px;
     padding-bottom: 4px;
     flex-shrink: 0;
-  }}
-  .transcript-area.training-active:not(.mode-off) .training-toolbar {{
+  }
+  .transcript-area.training-active:not(.mode-off) .training-toolbar {
     display: flex;
-  }}
-  .view-pill {{
+  }
+  .view-pill {
     background: rgba(30, 41, 59, 0.85);
     color: #94a3b8;
     border: 1px solid #334155;
@@ -415,30 +399,29 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-weight: 600;
     cursor: pointer;
     transition: all 0.14s;
-  }}
-  .view-pill.selected {{
+  }
+  .view-pill.selected {
     background: rgba(43, 162, 189, 0.22);
     color: #38bdf8;
     border-color: rgba(43, 162, 189, 0.65);
-  }}
+  }
 
-  .transcript-area.training-active:not(.mode-off) .caption-list {{
+  .transcript-area.training-active:not(.mode-off) .caption-list {
     flex: 1;
     display: flex;
     flex-direction: column;
     justify-content: center;
     padding: 4px 6px;
-  }}
+  }
 
-  .transcript-area.training-active .caption-line:not(.in-range) {{
+  .transcript-area.training-active .caption-line:not(.in-range) {
     display: none !important;
-  }}
-  .transcript-area.training-active .line-actions {{
+  }
+  .transcript-area.training-active .line-actions {
     display: none !important;
-  }}
+  }
 
-  /* Spotlight Mode */
-  .transcript-area.training-active.view-spotlight .caption-line.in-range {{
+  .transcript-area.training-active.view-spotlight .caption-line.in-range {
     display: none;
     border: none;
     background: transparent;
@@ -447,27 +430,26 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-size: 19px;
     line-height: 1.55;
     margin: 2px 0;
-  }}
-  .transcript-area.training-active.view-spotlight .caption-line.in-range.neighbor-line {{
+  }
+  .transcript-area.training-active.view-spotlight .caption-line.in-range.neighbor-line {
     display: flex;
     opacity: 0.34;
     font-weight: 400;
     color: #cbd5e1;
-  }}
-  .transcript-area.training-active.view-spotlight .caption-line.in-range.active {{
+  }
+  .transcript-area.training-active.view-spotlight .caption-line.in-range.active {
     display: flex;
     opacity: 1;
     font-weight: 600;
     color: #ffffff;
     background: rgba(43, 162, 189, 0.16);
     box-shadow: inset 3px 0 0 #2ba2bd;
-  }}
+  }
 
-  /* Pure 1-Line Mode */
-  .transcript-area.training-active.view-oneline .caption-line.in-range {{
+  .transcript-area.training-active.view-oneline .caption-line.in-range {
     display: none;
-  }}
-  .transcript-area.training-active.view-oneline .caption-line.in-range.active {{
+  }
+  .transcript-area.training-active.view-oneline .caption-line.in-range.active {
     display: flex;
     justify-content: center;
     text-align: center;
@@ -478,81 +460,81 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-weight: 600;
     color: #ffffff;
     padding: 12px 16px;
-  }}
-  .transcript-area.training-active.view-oneline .caption-line.in-range.active .caption-time {{
+  }
+  .transcript-area.training-active.view-oneline .caption-line.in-range.active .caption-time {
     display: none;
-  }}
+  }
 
-  .caption-main {{
+  .caption-main {
     flex: 1;
     min-width: 0;
-  }}
-  .caption-time {{
+  }
+  .caption-time {
     font-size: 10.5px;
     color: var(--muted);
     margin-right: 6px;
     font-variant-numeric: tabular-nums;
-  }}
-  .line-actions {{
+  }
+  .line-actions {
     display: flex;
     gap: 5px;
     flex-shrink: 0;
     align-self: center;
-  }}
-  .tag-btn {{
+  }
+  .tag-btn {
     border-radius: 5px;
     padding: 4px 9px;
     font-size: 11px;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.12s;
-  }}
-  .tag-btn.s-btn {{
+  }
+  .tag-btn.s-btn {
     background: rgba(16, 185, 129, 0.16);
     color: #34d399;
     border: 1px solid rgba(16, 185, 129, 0.5);
-  }}
-  .transcript-area.awaiting-range .tag-btn.s-btn {{
+  }
+  .transcript-area.awaiting-range .tag-btn.s-btn {
     background: rgba(16, 185, 129, 0.25);
     border-color: rgba(16, 185, 129, 0.8);
-  }}
+  }
   .tag-btn.s-btn:hover,
-  .tag-btn.s-btn.is-start {{
+  .tag-btn.s-btn.is-start {
     background: #10b981;
     color: #020617;
     border-color: #10b981;
-  }}
+  }
 
-  .tag-btn.e-btn {{
+  .tag-btn.e-btn {
     background: rgba(245, 158, 11, 0.16);
     color: #fbbf24;
     border: 1px solid rgba(245, 158, 11, 0.5);
-  }}
-  .transcript-area.awaiting-range .tag-btn.e-btn {{
+  }
+  .transcript-area.awaiting-range .tag-btn.e-btn {
     background: rgba(245, 158, 11, 0.25);
     border-color: rgba(245, 158, 11, 0.8);
-  }}
+  }
   .tag-btn.e-btn:hover,
-  .tag-btn.e-btn.is-end {{
+  .tag-btn.e-btn.is-end {
     background: #f59e0b;
     color: #020617;
     border-color: #f59e0b;
-  }}
+  }
 
-  .tag-btn.sync-line-btn {{
+  .tag-btn.sync-line-btn {
     background: rgba(251, 191, 36, 0.18);
     color: #fbbf24;
     border: 1px solid rgba(251, 191, 36, 0.6);
     font-weight: 700;
     padding: 4px 10px;
     font-size: 11px;
-  }}
-  .tag-btn:active {{
+  }
+  .tag-btn:active {
     transform: scale(0.95);
-  }}
+  }
 
-  .mode-off .caption-list {{ display: none !important; }}
-  .blind-notice {{
+  .mode-off .caption-list { display: none !important; }
+  .blind-notice {
     display: none;
     height: 100%;
     align-items: center;
@@ -562,13 +544,10 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     text-align: center;
     font-size: 14px;
     gap: 6px;
-  }}
-  .mode-off .blind-notice {{ display: flex; }}
+  }
+  .mode-off .blind-notice { display: flex; }
 
-  /* =========================================================
-     INLINE VAS CLARITY PROMPT (Appears at end of each step)
-     ========================================================= */
-  .vas-drawer {{
+  .vas-drawer {
     display: none;
     background: #0f172a;
     border-top: 1px solid #334155;
@@ -576,51 +555,51 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     flex-direction: column;
     gap: 10px;
     flex-shrink: 0;
-  }}
-  .vas-drawer.open {{
+  }
+  .vas-drawer.open {
     display: flex;
-  }}
-  .vas-top-row {{
+  }
+  .vas-top-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     font-size: 13px;
     font-weight: 700;
     color: #f8fafc;
-  }}
-  .vas-score-readout {{
+  }
+  .vas-score-readout {
     font-size: 18px;
     font-weight: 800;
     color: var(--clarity-color);
     font-variant-numeric: tabular-nums;
-  }}
-  .vas-slider-wrap {{
+  }
+  .vas-slider-wrap {
     display: flex;
     align-items: center;
     gap: 10px;
-  }}
-  .vas-end-label {{
+  }
+  .vas-end-label {
     font-size: 11px;
     color: #94a3b8;
     white-space: nowrap;
-  }}
-  input[type="range"].vas-slider {{
+  }
+  input[type="range"].vas-slider {
     flex: 1;
     accent-color: var(--clarity-color);
     height: 6px;
     cursor: pointer;
-  }}
-  .vas-actions-row {{
+  }
+  .vas-actions-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-  }}
-  .vas-presets {{
+  }
+  .vas-presets {
     display: flex;
     gap: 5px;
-  }}
-  .vas-preset-btn {{
+  }
+  .vas-preset-btn {
     background: #1e293b;
     color: #cbd5e1;
     border: 1px solid #334155;
@@ -630,12 +609,12 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-weight: 600;
     cursor: pointer;
     font-variant-numeric: tabular-nums;
-  }}
-  .vas-preset-btn:hover {{
+  }
+  .vas-preset-btn:hover {
     border-color: var(--clarity-color);
     color: #fff;
-  }}
-  .vas-submit-btn {{
+  }
+  .vas-submit-btn {
     background: var(--clarity-color);
     color: #ffffff;
     border: none;
@@ -645,15 +624,12 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-weight: 700;
     cursor: pointer;
     white-space: nowrap;
-  }}
-  .vas-submit-btn:hover {{
+  }
+  .vas-submit-btn:hover {
     filter: brightness(1.08);
-  }}
+  }
 
-  /* =========================================================
-     NINJA CONTROLS + 3-STAGE WORLD 1-1 PROGRESSIVE UNLOCK
-     ========================================================= */
-  .ninja-panel {{
+  .ninja-panel {
     flex: 1;
     background: var(--panel);
     display: flex;
@@ -663,25 +639,25 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     gap: 5px;
     min-height: 0;
     transition: opacity 0.22s ease, filter 0.22s ease;
-  }}
-  .ninja-panel.locked-unsynced {{
+  }
+  .ninja-panel.locked-unsynced {
     opacity: 0.34;
     pointer-events: none;
     filter: grayscale(0.45);
-  }}
+  }
   .ninja-panel.awaiting-range .next-btn,
   .ninja-panel.awaiting-range .run-btn,
   .ninja-panel.awaiting-range .steps-header,
-  .ninja-panel.awaiting-range .steps-list {{
+  .ninja-panel.awaiting-range .steps-list {
     opacity: 0.32;
     pointer-events: none;
-  }}
-  .ninja-panel:not(.running-active) .stop-btn {{
+  }
+  .ninja-panel:not(.running-active) .stop-btn {
     opacity: 0.32;
     pointer-events: none;
-  }}
+  }
 
-  .ninja-header {{
+  .ninja-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -690,14 +666,14 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-weight: 700;
     color: #e2e8f0;
     flex-shrink: 0;
-  }}
-  .header-right-group {{
+  }
+  .header-right-group {
     display: flex;
     align-items: center;
     gap: 5px;
     flex-shrink: 0;
-  }}
-  .protocol-select {{
+  }
+  .protocol-select {
     background: var(--card);
     color: #f8fafc;
     border: 1px solid #334155;
@@ -709,13 +685,13 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     min-width: 0;
     flex: 1;
     transition: opacity 0.2s, border-color 0.14s;
-  }}
+  }
   .protocol-select:hover,
-  .protocol-select:focus {{
+  .protocol-select:focus {
     border-color: #64748b;
     outline: none;
-  }}
-  .log-pill-btn {{
+  }
+  .log-pill-btn {
     background: var(--card);
     color: #e2e8f0;
     border: 1px solid #475569;
@@ -726,12 +702,12 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     cursor: pointer;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
-  }}
-  .log-pill-btn:hover {{
+  }
+  .log-pill-btn:hover {
     border-color: #94a3b8;
     color: #fff;
-  }}
-  .status-badge {{
+  }
+  .status-badge {
     font-size: 10.5px;
     font-weight: 600;
     color: #e2e8f0;
@@ -739,15 +715,15 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     padding: 2px 7px;
     border-radius: 999px;
     white-space: nowrap;
-  }}
-  .range-row {{
+  }
+  .range-row {
     display: grid;
     grid-template-columns: 1fr 1fr auto;
     gap: 5px;
     align-items: center;
     flex-shrink: 0;
-  }}
-  .mark-box {{
+  }
+  .mark-box {
     display: flex;
     align-items: center;
     background: var(--card);
@@ -755,14 +731,14 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     border-radius: 6px;
     overflow: hidden;
     transition: border-color 0.2s;
-  }}
-  .mark-box.start-box {{
+  }
+  .mark-box.start-box {
     border-color: rgba(16, 185, 129, 0.45);
-  }}
-  .mark-box.end-box {{
+  }
+  .mark-box.end-box {
     border-color: rgba(245, 158, 11, 0.45);
-  }}
-  .mark-btn {{
+  }
+  .mark-btn {
     color: #fff;
     border: none;
     padding: 6px 9px;
@@ -771,20 +747,20 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     cursor: pointer;
     white-space: nowrap;
     transition: opacity 0.2s, background 0.14s;
-  }}
-  .mark-btn.start-btn {{
+  }
+  .mark-btn.start-btn {
     background: #059669;
-  }}
-  .mark-btn.start-btn:hover {{
+  }
+  .mark-btn.start-btn:hover {
     background: #10b981;
-  }}
-  .mark-btn.end-btn {{
+  }
+  .mark-btn.end-btn {
     background: #d97706;
-  }}
-  .mark-btn.end-btn:hover {{
+  }
+  .mark-btn.end-btn:hover {
     background: #f59e0b;
-  }}
-  .mark-val {{
+  }
+  .mark-val {
     flex: 1;
     text-align: center;
     font-size: 11.5px;
@@ -792,10 +768,10 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     padding: 0 4px;
     font-weight: 600;
     transition: opacity 0.2s;
-  }}
-  .mark-val.start-val {{ color: #6ee7b7; }}
-  .mark-val.end-val {{ color: #fcd34d; }}
-  .next-btn {{
+  }
+  .mark-val.start-val { color: #6ee7b7; }
+  .mark-val.end-val { color: #fcd34d; }
+  .next-btn {
     background: var(--card);
     color: var(--text);
     border: 1px solid #475569;
@@ -806,14 +782,14 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     cursor: pointer;
     white-space: nowrap;
     transition: opacity 0.2s;
-  }}
-  .run-row {{
+  }
+  .run-row {
     display: grid;
     grid-template-columns: 1.4fr 1fr auto;
     gap: 5px;
     flex-shrink: 0;
-  }}
-  .run-btn {{
+  }
+  .run-btn {
     background: #2563eb;
     color: #fff;
     border: none;
@@ -823,8 +799,8 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-weight: 700;
     cursor: pointer;
     transition: opacity 0.2s;
-  }}
-  .stop-btn {{
+  }
+  .stop-btn {
     background: var(--danger);
     color: #fff;
     border: none;
@@ -834,8 +810,8 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-weight: 700;
     cursor: pointer;
     transition: opacity 0.2s;
-  }}
-  .cfg-btn {{
+  }
+  .cfg-btn {
     background: var(--card);
     color: var(--text);
     border: 1px solid #475569;
@@ -844,8 +820,8 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-size: 12.5px;
     cursor: pointer;
     transition: opacity 0.2s;
-  }}
-  .steps-header {{
+  }
+  .steps-header {
     font-size: 10px;
     font-weight: 700;
     color: var(--muted);
@@ -855,8 +831,8 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     align-items: center;
     flex-shrink: 0;
     transition: opacity 0.2s;
-  }}
-  .vas-mode-toggle {{
+  }
+  .vas-mode-toggle {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -864,8 +840,8 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     cursor: pointer;
     font-size: 10.5px;
     font-weight: 600;
-  }}
-  .steps-list {{
+  }
+  .steps-list {
     flex: 1;
     overflow-y: auto;
     border: 1px solid #1e293b;
@@ -873,8 +849,8 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     background: #020617;
     min-height: 0;
     transition: opacity 0.2s;
-  }}
-  .step-item {{
+  }
+  .step-item {
     display: grid;
     grid-template-columns: 26px 46px 56px 1fr auto;
     align-items: center;
@@ -884,28 +860,27 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     cursor: pointer;
     font-variant-numeric: tabular-nums;
     gap: 4px;
-  }}
-  .step-item:last-child {{ border-bottom: none; }}
-  .step-item.current-step {{
+  }
+  .step-item:last-child { border-bottom: none; }
+  .step-item.current-step {
     background: rgba(43, 162, 189, 0.28);
     color: #fff;
     font-weight: 700;
-  }}
-  .step-num {{ color: var(--muted); }}
-  .step-speed {{ color: #f8fafc; font-weight: 600; }}
-  .step-cc-on {{ color: #38bdf8; font-weight: 600; }}
-  .step-cc-off {{ color: #64748b; }}
-  .step-vas-pill {{
+  }
+  .step-num { color: var(--muted); }
+  .step-speed { color: #f8fafc; font-weight: 600; }
+  .step-cc-on { color: #38bdf8; font-weight: 600; }
+  .step-cc-off { color: #64748b; }
+  .step-vas-pill {
     font-size: 10.5px;
     font-weight: 700;
     color: #fb7185;
     background: rgba(244, 63, 94, 0.14);
     padding: 1px 6px;
     border-radius: 999px;
-  }}
+  }
 
-  /* Instant Floating Tooltip */
-  .fast-tooltip {{
+  .fast-tooltip {
     position: fixed;
     z-index: 9999;
     background: #020617;
@@ -920,14 +895,13 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
     opacity: 0;
     transition: opacity 0.08s ease;
-  }}
-  .fast-tooltip.visible {{
+  }
+  .fast-tooltip.visible {
     opacity: 1;
-  }}
+  }
 
-  /* Landscape & Desktop Split-Pane */
-  @media (min-width: 640px) and (orientation: landscape) {{
-    .app-shell {{
+  @media (min-width: 640px) and (orientation: landscape) {
+    .app-shell {
       display: grid;
       grid-template-columns: minmax(340px, 46%) 1fr;
       grid-template-rows: auto auto 1fr auto;
@@ -937,36 +911,35 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
         "ninja transcript"
         "ninja vas";
       height: 100vh;
-    }}
-    .stage-banner {{
+    }
+    .stage-banner {
       grid-area: banner;
-    }}
-    .video-section {{
+    }
+    .video-section {
       grid-area: video;
       border-right: 1px solid #1e293b;
-    }}
-    .player-wrap {{
+    }
+    .player-wrap {
       max-height: min(35vh, 280px);
-    }}
-    .ninja-panel {{
+    }
+    .ninja-panel {
       grid-area: ninja;
       border-right: 1px solid #1e293b;
       padding: 5px 8px 6px;
       gap: 4px;
-    }}
-    .transcript-area {{
+    }
+    .transcript-area {
       grid-area: transcript;
       border-bottom: none;
       height: 100%;
       padding: 6px 10px;
-    }}
-    .vas-drawer {{
+    }
+    .vas-drawer {
       grid-area: vas;
-    }}
-  }}
+    }
+  }
 
-  /* Modals (Protocol Config + Dark-Theme Plot & CSV Export) */
-  .modal-backdrop {{
+  .modal-backdrop {
     display: none;
     position: fixed;
     inset: 0;
@@ -975,9 +948,9 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     align-items: center;
     justify-content: center;
     padding: 12px;
-  }}
-  .modal-backdrop.open {{ display: flex; }}
-  .modal-box {{
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-box {
     background: #1e293b;
     border: 1px solid #475569;
     border-radius: 10px;
@@ -987,12 +960,12 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     display: flex;
     flex-direction: column;
     overflow: hidden;
-  }}
-  .modal-box.plot-modal-box {{
+  }
+  .modal-box.plot-modal-box {
     max-width: 780px;
     background: #0f172a;
-  }}
-  .modal-head {{
+  }
+  .modal-head {
     padding: 10px 14px;
     font-weight: 700;
     font-size: 14px;
@@ -1001,8 +974,8 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     justify-content: space-between;
     align-items: center;
     background: #1e293b;
-  }}
-  .modal-name-bar {{
+  }
+  .modal-name-bar {
     padding: 8px 12px;
     background: #0f172a;
     border-bottom: 1px solid #334155;
@@ -1010,8 +983,8 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     align-items: center;
     gap: 8px;
     font-size: 12px;
-  }}
-  .modal-name-bar input {{
+  }
+  .modal-name-bar input {
     flex: 1;
     background: #1e293b;
     color: #fff;
@@ -1020,44 +993,44 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     padding: 5px 8px;
     font-size: 12.5px;
     font-weight: 600;
-  }}
-  .modal-body {{
+  }
+  .modal-body {
     padding: 8px 12px;
     overflow-y: auto;
     flex: 1;
-  }}
-  .plot-canvas-wrap {{
+  }
+  .plot-canvas-wrap {
     padding: 12px;
     background: #0b1120;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
-  }}
-  #vas-plot-canvas {{
+  }
+  #vas-plot-canvas {
     width: 100%;
     height: auto;
     max-height: 360px;
     border-radius: 6px;
     background: #0b1120;
-  }}
-  .edit-row {{
+  }
+  .edit-row {
     display: grid;
     grid-template-columns: 24px 70px 60px 1fr;
     gap: 6px;
     align-items: center;
     margin-bottom: 6px;
     font-size: 12px;
-  }}
-  .edit-row input[type="number"] {{
+  }
+  .edit-row input[type="number"] {
     width: 100%;
     background: #0f172a;
     color: #fff;
     border: 1px solid #475569;
     border-radius: 4px;
     padding: 4px;
-  }}
-  .modal-foot {{
+  }
+  .modal-foot {
     padding: 8px 14px;
     border-top: 1px solid #334155;
     display: flex;
@@ -1065,8 +1038,8 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     justify-content: space-between;
     align-items: center;
     background: #1e293b;
-  }}
-  .export-btn {{
+  }
+  .export-btn {
     background: #10b981;
     color: #020617;
     border: none;
@@ -1075,10 +1048,10 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     font-size: 12px;
     font-weight: 800;
     cursor: pointer;
-  }}
-  .export-btn:hover {{
+  }
+  .export-btn:hover {
     background: #34d399;
-  }}
+  }
 </style>
 </head>
 <body>
@@ -1086,10 +1059,8 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
 <div id="fast-tooltip" class="fast-tooltip"></div>
 
 <div class="app-shell" id="app-shell">
-  <!-- Top Stage Guidance Banner -->
   <div class="stage-banner" id="stage-banner">1. Play video &amp; tap Sync on the line you hear (or ✓ Sync OK)</div>
 
-  <!-- 1. Video + Sync State Bar -->
   <div class="video-section">
     <div class="player-wrap">
       <div id="yt-player"></div>
@@ -1097,7 +1068,6 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     <div class="meta-bar" id="meta-bar"></div>
   </div>
 
-  <!-- 2. Quiet Transcript Pane / Focused Training Stage -->
   <div class="transcript-area view-spotlight" id="transcript-area">
     <div class="training-toolbar">
       <button class="view-pill selected" id="pill-spotlight" onclick="setTrainingView('spotlight')">Spotlight</button>
@@ -1110,7 +1080,6 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     <div class="caption-list" id="caption-list"></div>
   </div>
 
-  <!-- Inline VAS Clarity Prompt (Appears at end of each step when VAS mode is enabled) -->
   <div class="vas-drawer" id="vas-drawer">
     <div class="vas-top-row">
       <span id="vas-step-prompt">Step 1/19 (1.0x CC OFF) — Speech Clarity</span>
@@ -1133,7 +1102,6 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     </div>
   </div>
 
-  <!-- 3. Ninja Controls (3-Stage Progressive Unlock) -->
   <div class="ninja-panel locked-unsynced" id="ninja-panel">
     <div class="ninja-header">
       <select class="protocol-select" id="protocol-select" data-tip="Switch training protocol" onchange="onProtocolChange(this.value)"></select>
@@ -1175,7 +1143,6 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
   </div>
 </div>
 
-<!-- Dark-Theme VAS Plot & CSV Export Modal -->
 <div class="modal-backdrop" id="plot-modal">
   <div class="modal-box plot-modal-box">
     <div class="modal-head">
@@ -1204,7 +1171,6 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
   </div>
 </div>
 
-<!-- Protocol Customization Modal -->
 <div class="modal-backdrop" id="cfg-modal">
   <div class="modal-box">
     <div class="modal-head">
@@ -1230,28 +1196,27 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
 </div>
 
 <script>
-  function fitParentIframe() {{
-    try {{
+  function fitParentIframe() {
+    try {
       const frame = window.frameElement;
-      if (frame && window.parent) {{
+      if (frame && window.parent) {
         const topOffset = frame.getBoundingClientRect().top;
         const avail = Math.max(300, window.parent.innerHeight - topOffset - 6);
         frame.style.height = avail + "px";
-      }}
-    }} catch (e) {{}}
-  }}
+      }
+    } catch (e) {}
+  }
   window.addEventListener("load", fitParentIframe);
   window.addEventListener("resize", fitParentIframe);
   setTimeout(fitParentIframe, 100);
 
-  /* Instant Custom Hover Tooltip Engine */
   const tooltipEl = document.getElementById("fast-tooltip");
-  document.addEventListener("mouseover", (e) => {{
+  document.addEventListener("mouseover", (e) => {
     const target = e.target.closest("[data-tip]");
-    if (!target) {{
+    if (!target) {
       tooltipEl.classList.remove("visible");
       return;
-    }}
+    }
     const text = target.getAttribute("data-tip");
     if (!text) return;
     tooltipEl.textContent = text;
@@ -1265,19 +1230,19 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     if (top < 8) top = rect.bottom + 6;
     tooltipEl.style.left = left + "px";
     tooltipEl.style.top = top + "px";
-  }});
-  document.addEventListener("mouseout", (e) => {{
-    if (e.target.closest("[data-tip]")) {{
+  });
+  document.addEventListener("mouseout", (e) => {
+    if (e.target.closest("[data-tip]")) {
       tooltipEl.classList.remove("visible");
-    }}
-  }});
-  document.addEventListener("mousedown", () => {{
+    }
+  });
+  document.addEventListener("mousedown", () => {
     tooltipEl.classList.remove("visible");
-  }});
+  });
 
-  const captions = {captions_json};
-  const videoId = "{video_id}";
-  const sourceUrl = {source_url_json};
+  const captions = __CAPTIONS_JSON__;
+  const videoId = __VIDEO_ID_JSON__;
+  const sourceUrl = __SOURCE_URL_JSON__;
   const DEFAULT_SPAN = 30.0;
   const SYNC_CACHE_KEY = "ninja_sync_cache_v1";
   const CUSTOM_PROTOCOLS_KEY = "ninja_custom_protocols_v1";
@@ -1286,106 +1251,106 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
   const SUBJECT_ID_KEY = "ninja_subject_id_v1";
   const MAX_CACHE_ENTRIES = 100;
 
-  function buildShadowingSteps() {{
+  function buildShadowingSteps() {
     const list = [
-      {{ speed: 1.0, cc: false }},
-      {{ speed: 1.0, cc: true }}
+      { speed: 1.0, cc: false },
+      { speed: 1.0, cc: true }
     ];
-    for (const spd of [0.5, 0.6, 0.7, 0.8]) {{
-      for (let r = 0; r < 3; r++) list.push({{ speed: spd, cc: true }});
-    }}
-    for (const spd of [0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]) {{
-      for (let r = 0; r < 3; r++) list.push({{ speed: spd, cc: false }});
-    }}
+    for (const spd of [0.5, 0.6, 0.7, 0.8]) {
+      for (let r = 0; r < 3; r++) list.push({ speed: spd, cc: true });
+    }
+    for (const spd of [0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]) {
+      for (let r = 0; r < 3; r++) list.push({ speed: spd, cc: false });
+    }
     return list;
-  }}
+  }
 
-  const BUILTIN_PROTOCOLS = {{
-    "anchor_06": {{
+  const BUILTIN_PROTOCOLS = {
+    "anchor_06": {
       name: "Ninja Protocol (0.6x Anchor)",
       shortKey: "ninja",
       steps: [
-        {{ speed: 1.0, cc: false }},
-        {{ speed: 1.0, cc: true }},
-        {{ speed: 0.6, cc: true }},
-        {{ speed: 0.6, cc: true }},
-        {{ speed: 0.6, cc: true }},
-        {{ speed: 0.7, cc: true }},
-        {{ speed: 0.8, cc: true }},
-        {{ speed: 0.9, cc: true }},
-        {{ speed: 1.0, cc: false }},
-        {{ speed: 1.1, cc: false }},
-        {{ speed: 1.2, cc: false }},
-        {{ speed: 1.3, cc: false }},
-        {{ speed: 1.4, cc: false }},
-        {{ speed: 1.5, cc: false }},
-        {{ speed: 1.6, cc: false }},
-        {{ speed: 1.7, cc: false }},
-        {{ speed: 1.8, cc: false }},
-        {{ speed: 1.9, cc: false }},
-        {{ speed: 2.0, cc: false }}
+        { speed: 1.0, cc: false },
+        { speed: 1.0, cc: true },
+        { speed: 0.6, cc: true },
+        { speed: 0.6, cc: true },
+        { speed: 0.6, cc: true },
+        { speed: 0.7, cc: true },
+        { speed: 0.8, cc: true },
+        { speed: 0.9, cc: true },
+        { speed: 1.0, cc: false },
+        { speed: 1.1, cc: false },
+        { speed: 1.2, cc: false },
+        { speed: 1.3, cc: false },
+        { speed: 1.4, cc: false },
+        { speed: 1.5, cc: false },
+        { speed: 1.6, cc: false },
+        { speed: 1.7, cc: false },
+        { speed: 1.8, cc: false },
+        { speed: 1.9, cc: false },
+        { speed: 2.0, cc: false }
       ]
-    }},
-    "express": {{
+    },
+    "express": {
       name: "Ninja Protocol (Express)",
       shortKey: "express",
       steps: [
-        {{ speed: 1.0, cc: false }},
-        {{ speed: 0.6, cc: true }},
-        {{ speed: 1.0, cc: false }},
-        {{ speed: 1.3, cc: false }},
-        {{ speed: 1.5, cc: false }},
-        {{ speed: 1.6, cc: false }},
-        {{ speed: 1.7, cc: false }},
-        {{ speed: 1.8, cc: false }},
-        {{ speed: 1.9, cc: false }},
-        {{ speed: 2.0, cc: false }}
+        { speed: 1.0, cc: false },
+        { speed: 0.6, cc: true },
+        { speed: 1.0, cc: false },
+        { speed: 1.3, cc: false },
+        { speed: 1.5, cc: false },
+        { speed: 1.6, cc: false },
+        { speed: 1.7, cc: false },
+        { speed: 1.8, cc: false },
+        { speed: 1.9, cc: false },
+        { speed: 2.0, cc: false }
       ]
-    }},
-    "shadowing": {{
+    },
+    "shadowing": {
       name: "Ninja Shadowing Protocol",
       shortKey: "shadowing",
       steps: buildShadowingSteps()
-    }}
-  }};
+    }
+  };
 
-  function loadCustomProtocols() {{
-    try {{
-      return JSON.parse(localStorage.getItem(CUSTOM_PROTOCOLS_KEY) || "{{}}");
-    }} catch (e) {{
-      return {{}};
-    }}
-  }}
+  function loadCustomProtocols() {
+    try {
+      return JSON.parse(localStorage.getItem(CUSTOM_PROTOCOLS_KEY) || "{}");
+    } catch (e) {
+      return {};
+    }
+  }
 
-  function saveCustomProtocols(obj) {{
-    try {{
+  function saveCustomProtocols(obj) {
+    try {
       localStorage.setItem(CUSTOM_PROTOCOLS_KEY, JSON.stringify(obj));
-    }} catch (e) {{}}
-  }}
+    } catch (e) {}
+  }
 
   let customProtocols = loadCustomProtocols();
   let selectedProtocolId = localStorage.getItem(SELECTED_PROTOCOL_KEY) || "anchor_06";
 
-  function getProtocolById(pid) {{
+  function getProtocolById(pid) {
     if (BUILTIN_PROTOCOLS[pid]) return BUILTIN_PROTOCOLS[pid];
     if (customProtocols[pid]) return customProtocols[pid];
     return BUILTIN_PROTOCOLS["anchor_06"];
-  }}
+  }
 
-  if (!BUILTIN_PROTOCOLS[selectedProtocolId] && !customProtocols[selectedProtocolId]) {{
+  if (!BUILTIN_PROTOCOLS[selectedProtocolId] && !customProtocols[selectedProtocolId]) {
     selectedProtocolId = "anchor_06";
-  }}
+  }
 
-  let steps = getProtocolById(selectedProtocolId).steps.map(s => ({{ ...s }}));
+  let steps = getProtocolById(selectedProtocolId).steps.map(s => ({ ...s }));
   let trainingView = localStorage.getItem("ninja_training_view") || "spotlight";
   let vasEnabled = localStorage.getItem("ninja_vas_enabled") !== "false";
   let subjectId = localStorage.getItem(SUBJECT_ID_KEY) || "SUBJ_001";
   let trialLogs = [];
-  try {{
+  try {
     trialLogs = JSON.parse(localStorage.getItem(TRIAL_LOG_KEY) || "[]");
-  }} catch (e) {{
+  } catch (e) {
     trialLogs = [];
-  }}
+  }
 
   let player = null;
   let videoTitle = videoId;
@@ -1430,63 +1395,62 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
   document.getElementById("vas-enabled-chk").checked = vasEnabled;
   document.getElementById("subject-id-input").value = subjectId;
 
-  function saveTrialLogs() {{
-    try {{
+  function saveTrialLogs() {
+    try {
       localStorage.setItem(TRIAL_LOG_KEY, JSON.stringify(trialLogs));
-    }} catch (e) {{}}
+    } catch (e) {}
     updateLogPill();
-  }}
+  }
 
-  function updateLogPill() {{
+  function updateLogPill() {
     const videoTrials = trialLogs.filter(r => r.VideoID === videoId);
-    logPillBtnEl.textContent = `📊 ${{videoTrials.length}}`;
-  }}
+    logPillBtnEl.textContent = `📊 ${videoTrials.length}`;
+  }
 
-  function saveSubjectId(val) {{
+  function saveSubjectId(val) {
     subjectId = (val || "").trim() || "SUBJ_001";
     localStorage.setItem(SUBJECT_ID_KEY, subjectId);
-  }}
+  }
 
-  function toggleVasEnabled(checked) {{
+  function toggleVasEnabled(checked) {
     vasEnabled = checked;
     localStorage.setItem("ninja_vas_enabled", String(checked));
-    if (!checked && awaitingVas) {{
+    if (!checked && awaitingVas) {
       awaitingVas = false;
       vasDrawerEl.classList.remove("open");
       applyStep(currentStepIdx + 1);
-    }}
-  }}
+    }
+  }
 
-  function onVasSliderInput(val) {{
-    vasScoreReadoutEl.textContent = `${{val}}%`;
-  }}
+  function onVasSliderInput(val) {
+    vasScoreReadoutEl.textContent = `${val}%`;
+  }
 
-  function setVasVal(val) {{
+  function setVasVal(val) {
     vasSliderEl.value = val;
-    vasScoreReadoutEl.textContent = `${{val}}%`;
-  }}
+    vasScoreReadoutEl.textContent = `${val}%`;
+  }
 
-  function promptVasForCurrentStep() {{
+  function promptVasForCurrentStep() {
     awaitingVas = true;
-    if (player && typeof player.pauseVideo === "function") {{
+    if (player && typeof player.pauseVideo === "function") {
       player.pauseVideo();
-    }}
+    }
     const step = steps[currentStepIdx];
     document.getElementById("vas-step-prompt").textContent =
-      `Step ${{currentStepIdx + 1}}/${{steps.length}} (${{step.speed.toFixed(1)}}x ${{step.cc ? 'CC ON' : 'CC OFF'}}) — Clarity`;
-    // Keep previous VAS score as starting anchor (matches natural sequential rating)
-    vasScoreReadoutEl.textContent = `${{vasSliderEl.value}}%`;
+      `Step ${currentStepIdx + 1}/${steps.length} (${step.speed.toFixed(1)}x ${step.cc ? 'CC ON' : 'CC OFF'}) — Clarity`;
+    vasScoreReadoutEl.textContent = `${vasSliderEl.value}%`;
     vasDrawerEl.classList.add("open");
-    statusBadge.textContent = `Rate Step ${{currentStepIdx + 1}}/${{steps.length}}`;
-  }}
+    statusBadge.textContent = `Rate Step ${currentStepIdx + 1}/${steps.length}`;
+  }
 
-  function submitVasAndContinue() {{
+  function submitVasAndContinue() {
     if (!awaitingVas || currentStepIdx < 0) return;
     const step = steps[currentStepIdx];
     const score = parseInt(vasSliderEl.value, 10) || 0;
     const proto = getProtocolById(selectedProtocolId);
 
-    trialLogs.push({{
+    trialLogs.push({
       SubjectID: subjectId,
       Timestamp: new Date().toISOString(),
       VideoID: videoId,
@@ -1496,141 +1460,140 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
       PlaybackRate: Number(step.speed.toFixed(1)),
       Subtitles: Boolean(step.cc),
       VAS_Clarity: score,
-      URL: sourceUrl || `https://www.youtube.com/watch?v=${{videoId}}`,
+      URL: sourceUrl || `https://www.youtube.com/watch?v=${videoId}`,
       Title: videoTitle || videoId,
       Protocol: proto.shortKey || proto.name
-    }});
+    });
     saveTrialLogs();
 
     awaitingVas = false;
     vasDrawerEl.classList.remove("open");
     renderStepsList();
     applyStep(currentStepIdx + 1);
-  }}
+  }
 
-  // Keyboard shortcut: Enter submits VAS when prompt is open
-  document.addEventListener("keydown", (e) => {{
-    if (awaitingVas && e.key === "Enter") {{
+  document.addEventListener("keydown", (e) => {
+    if (awaitingVas && e.key === "Enter") {
       e.preventDefault();
       submitVasAndContinue();
-    }}
-  }});
+    }
+  });
 
-  function renderProtocolDropdown() {{
+  function renderProtocolDropdown() {
     protocolSelectEl.innerHTML = "";
-    for (const [id, proto] of Object.entries(BUILTIN_PROTOCOLS)) {{
+    for (const [id, proto] of Object.entries(BUILTIN_PROTOCOLS)) {
       const opt = document.createElement("option");
       opt.value = id;
       opt.textContent = proto.name;
       protocolSelectEl.appendChild(opt);
-    }}
-    for (const [id, proto] of Object.entries(customProtocols)) {{
+    }
+    for (const [id, proto] of Object.entries(customProtocols)) {
       const opt = document.createElement("option");
       opt.value = id;
-      opt.textContent = `★ ${{proto.name}}`;
+      opt.textContent = `★ ${proto.name}`;
       protocolSelectEl.appendChild(opt);
-    }}
+    }
     const newCustomOpt = document.createElement("option");
     newCustomOpt.value = "__new_custom__";
     newCustomOpt.textContent = "+ Custom sequence...";
     protocolSelectEl.appendChild(newCustomOpt);
 
     protocolSelectEl.value = selectedProtocolId;
-  }}
+  }
 
-  function onProtocolChange(val) {{
-    if (isRunning) {{
+  function onProtocolChange(val) {
+    if (isRunning) {
       protocolSelectEl.value = selectedProtocolId;
       return;
-    }}
-    if (val === "__new_custom__") {{
+    }
+    if (val === "__new_custom__") {
       protocolSelectEl.value = selectedProtocolId;
       openModal(true);
       return;
-    }}
+    }
     selectedProtocolId = val;
     localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocolId);
-    steps = getProtocolById(selectedProtocolId).steps.map(s => ({{ ...s }}));
+    steps = getProtocolById(selectedProtocolId).steps.map(s => ({ ...s }));
     renderStepsList();
-  }}
+  }
 
-  function loadSyncCache() {{
-    try {{
-      return JSON.parse(localStorage.getItem(SYNC_CACHE_KEY) || "{{}}");
-    }} catch (e) {{
-      return {{}};
-    }}
-  }}
+  function loadSyncCache() {
+    try {
+      return JSON.parse(localStorage.getItem(SYNC_CACHE_KEY) || "{}");
+    } catch (e) {
+      return {};
+    }
+  }
 
-  function saveVideoSyncState(currentPlaybackSec = null) {{
+  function saveVideoSyncState(currentPlaybackSec = null) {
     if (!isSynced || !videoId) return;
-    try {{
+    try {
       const cache = loadSyncCache();
-      const prevEntry = cache[videoId] || {{}};
+      const prevEntry = cache[videoId] || {};
       const playbackToSave = (typeof currentPlaybackSec === "number" && currentPlaybackSec >= 0)
         ? Math.round(currentPlaybackSec * 10) / 10
         : (typeof prevEntry.lastPlaybackTime === "number" ? prevEntry.lastPlaybackTime : (hasUserRange ? rangeStart : 0));
 
-      cache[videoId] = {{
+      cache[videoId] = {
         timeOffset: timeOffset,
         hasUserRange: hasUserRange,
         rangeStart: rangeStart,
         rangeEnd: rangeEnd,
         lastPlaybackTime: playbackToSave,
         updatedAt: Date.now()
-      }};
+      };
       const keys = Object.keys(cache);
-      if (keys.length > MAX_CACHE_ENTRIES) {{
+      if (keys.length > MAX_CACHE_ENTRIES) {
         keys.sort((a, b) => (cache[a].updatedAt || 0) - (cache[b].updatedAt || 0));
-        for (let i = 0; i < keys.length - MAX_CACHE_ENTRIES; i++) {{
+        for (let i = 0; i < keys.length - MAX_CACHE_ENTRIES; i++) {
           delete cache[keys[i]];
-        }}
-      }}
+        }
+      }
       localStorage.setItem(SYNC_CACHE_KEY, JSON.stringify(cache));
-    }} catch (e) {{}}
-  }}
+    } catch (e) {}
+  }
 
-  function deleteVideoSyncState() {{
+  function deleteVideoSyncState() {
     if (!videoId) return;
-    try {{
+    try {
       const cache = loadSyncCache();
-      if (cache[videoId]) {{
+      if (cache[videoId]) {
         delete cache[videoId];
         localStorage.setItem(SYNC_CACHE_KEY, JSON.stringify(cache));
-      }}
-    }} catch (e) {{}}
-  }}
+      }
+    } catch (e) {}
+  }
 
-  function restoreVideoSyncState() {{
+  function restoreVideoSyncState() {
     const cache = loadSyncCache();
     const entry = cache[videoId];
-    if (entry && typeof entry.timeOffset === "number") {{
+    if (entry && typeof entry.timeOffset === "number") {
       timeOffset = entry.timeOffset;
       isSynced = true;
       restoredFromCache = true;
-      if (entry.hasUserRange && typeof entry.rangeStart === "number" && typeof entry.rangeEnd === "number") {{
+      if (entry.hasUserRange && typeof entry.rangeStart === "number" && typeof entry.rangeEnd === "number") {
         hasUserRange = true;
         rangeStart = entry.rangeStart;
         rangeEnd = entry.rangeEnd;
         cachedResumeTime = entry.rangeStart;
-      }} else if (typeof entry.lastPlaybackTime === "number" && entry.lastPlaybackTime > 0) {{
+      } else if (typeof entry.lastPlaybackTime === "number" && entry.lastPlaybackTime > 0) {
         cachedResumeTime = entry.lastPlaybackTime;
-      }}
+      }
       return true;
-    }}
+    }
     return false;
-  }}
+  }
 
-  function getMaxDuration() {{
-    if (player && typeof player.getDuration === "function") {{
+  function getMaxDuration() {
+    if (player && typeof player.getDuration === "function") {
       const d = player.getDuration();
       if (d && d > 0) return d;
-    }}
+    }
     if (captions.length > 0) return captions[captions.length - 1].end + 30;
     return 3600;
-  }}
+  }
 
-  function setTrainingView(mode) {{
+  function setTrainingView(mode) {
     trainingView = mode;
     localStorage.setItem("ninja_training_view", mode);
     areaEl.classList.toggle("view-spotlight", mode === "spotlight");
@@ -1638,67 +1601,67 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     document.getElementById("pill-spotlight").classList.toggle("selected", mode === "spotlight");
     document.getElementById("pill-oneline").classList.toggle("selected", mode === "oneline");
     updateNeighborClasses();
-  }}
+  }
 
-  function fmtTime(sec) {{
+  function fmtTime(sec) {
     if (sec === undefined || sec === null || isNaN(sec)) return "00:00";
     const sTotal = Math.max(0, Math.floor(sec));
     const m = Math.floor(sTotal / 60);
     const s = sTotal % 60;
     return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
-  }}
+  }
 
-  function fmtTimePrecise(sec) {{
+  function fmtTimePrecise(sec) {
     if (sec === undefined || sec === null || isNaN(sec)) return "00:00.0";
     const sClamped = Math.max(0, sec);
     const m = Math.floor(sClamped / 60);
     const s = (sClamped % 60).toFixed(1).padStart(4, "0");
     return String(m).padStart(2, "0") + ":" + s;
-  }}
+  }
 
-  function updatePanelLockState() {{
+  function updatePanelLockState() {
     appShellEl.classList.toggle("sequence-running", isRunning);
     ninjaPanelEl.classList.toggle("running-active", isRunning);
     areaEl.classList.toggle("awaiting-range", isSynced && !hasUserRange);
 
-    if (!isSynced) {{
+    if (!isSynced) {
       ninjaPanelEl.classList.add("locked-unsynced");
       ninjaPanelEl.classList.remove("awaiting-range");
       statusBadge.textContent = "Step 1: Sync";
       stageBannerEl.classList.remove("hidden");
       stageBannerEl.textContent = "1. Play video & tap Sync on the line you hear (or ✓ Sync OK)";
-    }} else if (!hasUserRange) {{
+    } else if (!hasUserRange) {
       ninjaPanelEl.classList.remove("locked-unsynced");
       ninjaPanelEl.classList.add("awaiting-range");
       statusBadge.textContent = "Step 2: S / E";
       stageBannerEl.classList.remove("hidden");
       stageBannerEl.textContent = "2. Mark start (S) or end (E)";
-    }} else {{
+    } else {
       ninjaPanelEl.classList.remove("locked-unsynced", "awaiting-range");
       stageBannerEl.classList.add("hidden");
-      if (!isRunning) {{
+      if (!isRunning) {
         statusBadge.textContent = "Ready";
-      }}
-    }}
-  }}
+      }
+    }
+  }
 
-  function renderSyncBar() {{
+  function renderSyncBar() {
     const curTimeText = document.getElementById("time-display")?.textContent || "00:00 / 00:00";
-    if (!isSynced) {{
+    if (!isSynced) {
       metaBarEl.innerHTML = `
         <div class="meta-top">
-          <div class="time-display" id="time-display">${{curTimeText}}</div>
+          <div class="time-display" id="time-display">${curTimeText}</div>
           <button class="sync-ok-btn" data-tip="Accept current 0.0s subtitle timing as synced" onclick="acceptSyncAsIs()">✓ Sync OK</button>
         </div>
       `;
-    }} else {{
+    } else {
       const sign = timeOffset >= 0 ? "+" : "";
       const savedHtml = restoredFromCache ? `<span class="saved-tag">Saved</span>` : "";
       metaBarEl.innerHTML = `
         <div class="meta-top">
-          <div class="time-display" id="time-display">${{curTimeText}}</div>
+          <div class="time-display" id="time-display">${curTimeText}</div>
           <div>
-            ${{savedHtml}}<span class="offset-badge">${{sign}}${{timeOffset.toFixed(1)}}s</span>
+            ${savedHtml}<span class="offset-badge">${sign}${timeOffset.toFixed(1)}s</span>
             <button class="unsync-btn" data-tip="Clear saved sync and reset" onclick="unsyncAll()">Unsync</button>
           </div>
         </div>
@@ -1719,11 +1682,11 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
           </div>
         </div>
       `;
-    }}
+    }
     updatePanelLockState();
-  }}
+  }
 
-  function acceptSyncAsIs() {{
+  function acceptSyncAsIs() {
     const now = (player && typeof player.getCurrentTime === "function") ? player.getCurrentTime() : 0;
     timeOffset = 0.0;
     isSynced = true;
@@ -1735,9 +1698,9 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     renderCaptions();
     updateRangeUI();
     updatePlaybackHighlight(now, true);
-  }}
+  }
 
-  function unsyncAll() {{
+  function unsyncAll() {
     if (isRunning) return;
     stopSequence();
     deleteVideoSyncState();
@@ -1751,74 +1714,74 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     renderSyncBar();
     renderCaptions();
     updateRangeUI();
-    if (player && typeof player.getCurrentTime === "function") {{
+    if (player && typeof player.getCurrentTime === "function") {
       updatePlaybackHighlight(player.getCurrentTime(), false);
-    }}
-  }}
+    }
+  }
 
-  function adjustOffset(delta) {{
+  function adjustOffset(delta) {
     if (isRunning) return;
     const oldOffset = timeOffset;
     timeOffset = Math.round((timeOffset + delta) * 10) / 10;
     restoredFromCache = false;
     const diff = timeOffset - oldOffset;
-    if (hasUserRange) {{
+    if (hasUserRange) {
       rangeStart = Math.max(0, rangeStart + diff);
       rangeEnd = Math.max(rangeStart + 0.5, rangeEnd + diff);
-    }}
+    }
     activeCaptionIdx = -1;
     saveVideoSyncState();
     renderSyncBar();
     renderCaptions();
     updateRangeUI();
-    if (player && typeof player.getCurrentTime === "function") {{
+    if (player && typeof player.getCurrentTime === "function") {
       updatePlaybackHighlight(player.getCurrentTime(), true);
-    }}
-  }}
+    }
+  }
 
-  function setStartBoundary(newStart) {{
+  function setStartBoundary(newStart) {
     if (isRunning) return;
     const maxDur = getMaxDuration();
     rangeStart = Math.max(0, newStart);
-    if (!hasUserRange || rangeEnd <= rangeStart + 0.3) {{
+    if (!hasUserRange || rangeEnd <= rangeStart + 0.3) {
       rangeEnd = Math.min(maxDur, rangeStart + DEFAULT_SPAN);
-    }}
+    }
     hasUserRange = true;
     saveVideoSyncState(rangeStart);
     updatePanelLockState();
     updateRangeUI();
     renderStepsList();
-  }}
+  }
 
-  function setEndBoundary(newEnd) {{
+  function setEndBoundary(newEnd) {
     if (isRunning) return;
     rangeEnd = Math.max(0.5, newEnd);
-    if (!hasUserRange || rangeStart >= rangeEnd - 0.3) {{
+    if (!hasUserRange || rangeStart >= rangeEnd - 0.3) {
       rangeStart = Math.max(0, rangeEnd - DEFAULT_SPAN);
-    }}
+    }
     hasUserRange = true;
     saveVideoSyncState(rangeStart);
     updatePanelLockState();
     updateRangeUI();
     renderStepsList();
-  }}
+  }
 
-  function updateRangeUI() {{
-    if (!hasUserRange) {{
+  function updateRangeUI() {
+    if (!hasUserRange) {
       startValEl.textContent = "--:--.-";
       endValEl.textContent = "--:--.-";
-    }} else {{
+    } else {
       startValEl.textContent = fmtTimePrecise(rangeStart);
       endValEl.textContent = fmtTimePrecise(rangeEnd);
-    }}
+    }
     highlightRangeCaptions();
-  }}
+  }
 
-  function highlightRangeCaptions() {{
+  function highlightRangeCaptions() {
     let firstInRange = -1;
     let lastInRange = -1;
 
-    captions.forEach((item, idx) => {{
+    captions.forEach((item, idx) => {
       const el = document.getElementById("line-" + idx);
       if (!el) return;
       const sBtn = el.querySelector(".s-btn");
@@ -1826,40 +1789,40 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
       if (sBtn) sBtn.classList.remove("is-start");
       if (eBtn) eBtn.classList.remove("is-end");
 
-      if (!hasUserRange) {{
+      if (!hasUserRange) {
         el.classList.remove("in-range");
         return;
-      }}
+      }
 
       const adjStart = item.start + timeOffset;
       const adjEnd = item.end + timeOffset;
       const inRange = (adjEnd > rangeStart + 0.1) && (adjStart < rangeEnd - 0.1);
       el.classList.toggle("in-range", inRange);
-      if (inRange) {{
+      if (inRange) {
         if (firstInRange === -1) firstInRange = idx;
         lastInRange = idx;
-      }}
-    }});
+      }
+    });
 
-    if (hasUserRange && firstInRange !== -1) {{
+    if (hasUserRange && firstInRange !== -1) {
       document.getElementById("line-" + firstInRange)?.querySelector(".s-btn")?.classList.add("is-start");
       document.getElementById("line-" + lastInRange)?.querySelector(".e-btn")?.classList.add("is-end");
-    }}
+    }
     updateNeighborClasses();
-  }}
+  }
 
-  function updateNeighborClasses() {{
-    captions.forEach((_, idx) => {{
+  function updateNeighborClasses() {
+    captions.forEach((_, idx) => {
       const el = document.getElementById("line-" + idx);
       if (!el) return;
       const isNeighbor = activeCaptionIdx !== -1 && (idx === activeCaptionIdx - 1 || idx === activeCaptionIdx + 1);
       el.classList.toggle("neighbor-line", isNeighbor);
-    }});
-  }}
+    });
+  }
 
-  function renderCaptions() {{
+  function renderCaptions() {
     listEl.innerHTML = "";
-    captions.forEach((item, idx) => {{
+    captions.forEach((item, idx) => {
       const adjStart = item.start + timeOffset;
       const adjEnd = item.end + timeOffset;
       const div = document.createElement("div");
@@ -1871,32 +1834,32 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
 
       const mainDiv = document.createElement("div");
       mainDiv.className = "caption-main";
-      mainDiv.innerHTML = `<span class="caption-time">${{fmtTime(adjStart)}}</span><span>${{item.text}}</span>`;
-      mainDiv.onclick = () => {{
+      mainDiv.innerHTML = `<span class="caption-time">${fmtTime(adjStart)}</span><span>${item.text}</span>`;
+      mainDiv.onclick = () => {
         if (!player || !player.seekTo) return;
         const targetT = Math.max(0, adjStart);
-        if (!isSynced) {{
+        if (!isSynced) {
           const wasPlaying = (typeof player.getPlayerState === "function" && player.getPlayerState() === YT.PlayerState.PLAYING);
           player.seekTo(targetT, true);
-          if (!wasPlaying && typeof player.pauseVideo === "function") {{
+          if (!wasPlaying && typeof player.pauseVideo === "function") {
             player.pauseVideo();
-          }}
+          }
           updatePlaybackHighlight(targetT, false);
-        }} else {{
+        } else {
           player.seekTo(targetT, true);
           player.playVideo();
-        }}
-      }};
+        }
+      };
 
       const actions = document.createElement("div");
       actions.className = "line-actions";
 
-      if (!isSynced) {{
+      if (!isSynced) {
         const syncBtn = document.createElement("button");
         syncBtn.className = "tag-btn sync-line-btn";
         syncBtn.textContent = "Sync";
         syncBtn.setAttribute("data-tip", "Sync subtitles to this line right now");
-        syncBtn.onclick = (e) => {{
+        syncBtn.onclick = (e) => {
           e.stopPropagation();
           if (!player || typeof player.getCurrentTime !== "function") return;
           const now = player.getCurrentTime();
@@ -1910,95 +1873,95 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
           renderCaptions();
           updateRangeUI();
           updatePlaybackHighlight(now, true);
-        }};
+        };
         actions.appendChild(syncBtn);
-      }} else {{
+      } else {
         const startBtn = document.createElement("button");
         startBtn.className = "tag-btn s-btn";
         startBtn.textContent = "S";
         startBtn.setAttribute("data-tip", "Mark Start at this line");
-        startBtn.onclick = (e) => {{
+        startBtn.onclick = (e) => {
           e.stopPropagation();
           setStartBoundary(adjStart);
-        }};
+        };
 
         const endBtn = document.createElement("button");
         endBtn.className = "tag-btn e-btn";
         endBtn.textContent = "E";
         endBtn.setAttribute("data-tip", "Mark End at this line");
-        endBtn.onclick = (e) => {{
+        endBtn.onclick = (e) => {
           e.stopPropagation();
           setEndBoundary(adjEnd);
-        }};
+        };
 
         actions.appendChild(startBtn);
         actions.appendChild(endBtn);
-      }}
+      }
 
       div.appendChild(mainDiv);
       div.appendChild(actions);
       listEl.appendChild(div);
-    }});
+    });
     highlightRangeCaptions();
-  }}
+  }
 
-  function getLatestVasForStep(stepNum) {{
-    for (let i = trialLogs.length - 1; i >= 0; i--) {{
+  function getLatestVasForStep(stepNum) {
+    for (let i = trialLogs.length - 1; i >= 0; i--) {
       const r = trialLogs[i];
       if (r.VideoID === videoId && r.StepIdx === stepNum &&
-          Math.abs(r.StartTime - Number(rangeStart.toFixed(2))) < 0.2) {{
+          Math.abs(r.StartTime - Number(rangeStart.toFixed(2))) < 0.2) {
         return r.VAS_Clarity;
-      }}
-    }}
+      }
+    }
     return null;
-  }}
+  }
 
-  function renderStepsList() {{
+  function renderStepsList() {
     stepsListEl.innerHTML = "";
-    document.getElementById("step-counter").textContent = `${{steps.length}} steps`;
-    steps.forEach((stItem, idx) => {{
+    document.getElementById("step-counter").textContent = `${steps.length} steps`;
+    steps.forEach((stItem, idx) => {
       const row = document.createElement("div");
       row.className = "step-item" + (isRunning && idx === currentStepIdx ? " current-step" : "");
       row.id = "step-row-" + idx;
       const loggedVas = hasUserRange ? getLatestVasForStep(idx + 1) : null;
-      const vasBadge = loggedVas !== null ? `<span class="step-vas-pill">${{loggedVas}}%</span>` : `<span></span>`;
+      const vasBadge = loggedVas !== null ? `<span class="step-vas-pill">${loggedVas}%</span>` : `<span></span>`;
       row.innerHTML = `
-        <span class="step-num">${{idx + 1}}</span>
-        <span class="step-speed">${{stItem.speed.toFixed(1)}}x</span>
-        <span class="${{stItem.cc ? 'step-cc-on' : 'step-cc-off'}}">${{stItem.cc ? 'CC on' : 'CC off'}}</span>
+        <span class="step-num">${idx + 1}</span>
+        <span class="step-speed">${stItem.speed.toFixed(1)}x</span>
+        <span class="${stItem.cc ? 'step-cc-on' : 'step-cc-off'}">${stItem.cc ? 'CC on' : 'CC off'}</span>
         <span style="font-size:11px;color:#64748b;text-align:right;">Tap to jump</span>
-        ${{vasBadge}}
+        ${vasBadge}
       `;
-      row.onclick = () => {{ runSequence(idx); }};
+      row.onclick = () => { runSequence(idx); };
       stepsListEl.appendChild(row);
-    }});
-  }}
+    });
+  }
 
-  function setCCVisibility(showCC) {{
-    if (showCC) {{
+  function setCCVisibility(showCC) {
+    if (showCC) {
       areaEl.classList.remove("mode-off");
-    }} else {{
+    } else {
       areaEl.classList.add("mode-off");
-      if (isRunning && currentStepIdx >= 0) {{
+      if (isRunning && currentStepIdx >= 0) {
         const s = steps[currentStepIdx];
-        blindStepLabel.textContent = `Step ${{currentStepIdx + 1}}/${{steps.length}} (${{s.speed.toFixed(1)}}x) — CC OFF`;
-      }} else {{
+        blindStepLabel.textContent = `Step ${currentStepIdx + 1}/${steps.length} (${s.speed.toFixed(1)}x) — CC OFF`;
+      } else {
         blindStepLabel.textContent = "CC OFF — Listen carefully";
-      }}
-    }}
-  }}
+      }
+    }
+  }
 
-  function markStartNow() {{
+  function markStartNow() {
     if (!player || typeof player.getCurrentTime !== "function") return;
     setStartBoundary(player.getCurrentTime());
-  }}
+  }
 
-  function markEndNow() {{
+  function markEndNow() {
     if (!player || typeof player.getCurrentTime !== "function") return;
     setEndBoundary(player.getCurrentTime());
-  }}
+  }
 
-  function moveToNextFragment() {{
+  function moveToNextFragment() {
     if (!isSynced || !hasUserRange || isRunning) return;
     stopSequence();
     const prevEnd = rangeEnd;
@@ -2009,13 +1972,13 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     updatePanelLockState();
     updateRangeUI();
     renderStepsList();
-    if (player && player.seekTo) {{
+    if (player && player.seekTo) {
       player.seekTo(rangeStart, true);
       player.playVideo();
-    }}
-  }}
+    }
+  }
 
-  function runSequence(startIdx = 0) {{
+  function runSequence(startIdx = 0) {
     if (!player || steps.length === 0 || !isSynced || !hasUserRange) return;
     awaitingVas = false;
     vasDrawerEl.classList.remove("open");
@@ -2023,10 +1986,10 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     areaEl.classList.add("training-active");
     updatePanelLockState();
     applyStep(startIdx);
-  }}
+  }
 
-  function applyStep(idx) {{
-    if (idx >= steps.length) {{
+  function applyStep(idx) {
+    if (idx >= steps.length) {
       isRunning = false;
       awaitingVas = false;
       vasDrawerEl.classList.remove("open");
@@ -2039,7 +2002,7 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
       statusBadge.textContent = "Completed!";
       renderStepsList();
       return;
-    }}
+    }
 
     currentStepIdx = idx;
     const step = steps[idx];
@@ -2047,36 +2010,36 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
 
     player.setPlaybackRate(step.speed);
     setCCVisibility(step.cc);
-    statusBadge.textContent = `Step ${{idx + 1}}/${{steps.length}} (${{step.speed.toFixed(1)}}x ${{step.cc ? 'CC ON' : 'CC OFF'}})`;
+    statusBadge.textContent = `Step ${idx + 1}/${steps.length} (${step.speed.toFixed(1)}x ${step.cc ? 'CC ON' : 'CC OFF'})`;
 
     renderStepsList();
     const activeRow = document.getElementById("step-row-" + idx);
-    if (activeRow) activeRow.scrollIntoView({{ behavior: "smooth", block: "nearest" }});
+    if (activeRow) activeRow.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
     player.seekTo(rangeStart, true);
     player.playVideo();
     updatePlaybackHighlight(rangeStart, true);
 
-    setTimeout(() => {{ stepTransitionLock = false; }}, 350);
-  }}
+    setTimeout(() => { stepTransitionLock = false; }, 350);
+  }
 
-  function stopSequence() {{
+  function stopSequence() {
     isRunning = false;
     awaitingVas = false;
     vasDrawerEl.classList.remove("open");
     currentStepIdx = -1;
     areaEl.classList.remove("training-active");
-    if (player && typeof player.pauseVideo === "function") {{
+    if (player && typeof player.pauseVideo === "function") {
       player.pauseVideo();
       player.setPlaybackRate(1.0);
-    }}
+    }
     setCCVisibility(true);
     updatePanelLockState();
     renderStepsList();
-    if (activeCaptionIdx !== -1) {{
-      document.getElementById("line-" + activeCaptionIdx)?.scrollIntoView({{ behavior: "smooth", block: "center" }});
-    }}
-  }}
+    if (activeCaptionIdx !== -1) {
+      document.getElementById("line-" + activeCaptionIdx)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
 
   const hadCachedSync = restoreVideoSyncState();
   renderProtocolDropdown();
@@ -2087,168 +2050,166 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
   updateRangeUI();
   updateLogPill();
 
-  areaEl.addEventListener("touchstart", () => {{
+  areaEl.addEventListener("touchstart", () => {
     userScrolling = true;
     clearTimeout(scrollTimeout);
-  }}, {{ passive: true }});
-  areaEl.addEventListener("touchend", () => {{
+  }, { passive: true });
+  areaEl.addEventListener("touchend", () => {
     clearTimeout(scrollTimeout);
-    scrollTimeout = setTimeout(() => {{ userScrolling = false; }}, 3000);
-  }}, {{ passive: true }});
+    scrollTimeout = setTimeout(() => { userScrolling = false; }, 3000);
+  }, { passive: true });
 
   const tag = document.createElement("script");
   tag.src = "https://www.youtube.com/iframe_api";
   document.head.appendChild(tag);
 
-  window.onYouTubeIframeAPIReady = function() {{
-    player = new YT.Player("yt-player", {{
+  window.onYouTubeIframeAPIReady = function() {
+    player = new YT.Player("yt-player", {
       videoId: videoId,
-      playerVars: {{
+      playerVars: {
         playsinline: 1,
         cc_load_policy: 0,
         rel: 0,
-        modestbranding: 1
-      }},
-      events: {{
-        onReady: () => {{
+        modestbranding: 1,
+        start: (hadCachedSync && cachedResumeTime !== null && cachedResumeTime > 0)
+          ? Math.floor(cachedResumeTime)
+          : 0
+      },
+      events: {
+        onReady: () => {
           fitParentIframe();
-          try {{
+          try {
             const data = player.getVideoData();
             if (data && data.title) videoTitle = data.title;
-          }} catch (e) {{}}
+          } catch (e) {}
 
-          if (hadCachedSync && cachedResumeTime !== null && cachedResumeTime > 0) {{
-            player.seekTo(cachedResumeTime, true);
-            player.pauseVideo();
+          if (hadCachedSync && cachedResumeTime !== null && cachedResumeTime > 0) {
             updatePlaybackHighlight(cachedResumeTime, true);
-          }} else if (hadCachedSync) {{
+          } else if (hadCachedSync) {
             updatePlaybackHighlight(0, true);
-          }} else {{
+          } else {
             updatePlaybackHighlight(0, false);
-          }}
+          }
           setInterval(mainLoop, 100);
-        }},
-        onStateChange: () => {{
-          try {{
+        },
+        onStateChange: () => {
+          try {
             const data = player.getVideoData();
             if (data && data.title) videoTitle = data.title;
-          }} catch (e) {{}}
-        }}
-      }}
-    }});
-  }};
+          } catch (e) {}
+        }
+      }
+    });
+  };
 
-  function findCaptionIndexAt(effectiveT) {{
+  function findCaptionIndexAt(effectiveT) {
     let found = -1;
-    for (let i = 0; i < captions.length; i++) {{
-      if (effectiveT >= captions[i].start && effectiveT < captions[i].end) {{
+    for (let i = 0; i < captions.length; i++) {
+      if (effectiveT >= captions[i].start && effectiveT < captions[i].end) {
         found = i;
         break;
-      }}
-    }}
-    if (found === -1) {{
-      for (let i = captions.length - 1; i >= 0; i--) {{
-        if (effectiveT >= captions[i].start) {{
+      }
+    }
+    if (found === -1) {
+      for (let i = captions.length - 1; i >= 0; i--) {
+        if (effectiveT >= captions[i].start) {
           found = i;
           break;
-        }}
-      }}
-    }}
+        }
+      }
+    }
     return found;
-  }}
+  }
 
-  function updatePlaybackHighlight(t, forceScroll = false) {{
-    if (!isSynced) {{
+  function updatePlaybackHighlight(t, forceScroll = false) {
+    if (!isSynced) {
       const found = findCaptionIndexAt(t);
-      if (found !== previewCaptionIdx && found !== -1) {{
-        if (previewCaptionIdx !== -1) {{
+      if (found !== previewCaptionIdx && found !== -1) {
+        if (previewCaptionIdx !== -1) {
           document.getElementById("line-" + previewCaptionIdx)?.classList.remove("preview-active");
-        }}
+        }
         previewCaptionIdx = found;
         document.getElementById("line-" + previewCaptionIdx)?.classList.add("preview-active");
-      }}
+      }
       return;
-    }}
+    }
 
     const found = findCaptionIndexAt(t - timeOffset);
-    if (found !== activeCaptionIdx && found !== -1) {{
-      if (activeCaptionIdx !== -1) {{
+    if (found !== activeCaptionIdx && found !== -1) {
+      if (activeCaptionIdx !== -1) {
         const prev = document.getElementById("line-" + activeCaptionIdx);
         if (prev) prev.classList.remove("active");
-      }}
+      }
       activeCaptionIdx = found;
       const cur = document.getElementById("line-" + activeCaptionIdx);
-      if (cur) {{
+      if (cur) {
         cur.classList.add("active");
         updateNeighborClasses();
-        if (!isRunning && (forceScroll || !userScrolling) && !areaEl.classList.contains("mode-off")) {{
-          cur.scrollIntoView({{ behavior: "smooth", block: "center" }});
-        }}
-      }}
-    }}
-  }}
+        if (!isRunning && (forceScroll || !userScrolling) && !areaEl.classList.contains("mode-off")) {
+          cur.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    }
+  }
 
-  function mainLoop() {{
+  function mainLoop() {
     if (!player || typeof player.getCurrentTime !== "function") return;
     const t = player.getCurrentTime();
     const d = player.getDuration();
     const timeEl = document.getElementById("time-display");
-    if (timeEl) timeEl.textContent = `${{fmtTime(t)}} / ${{fmtTime(d)}}`;
+    if (timeEl) timeEl.textContent = `${fmtTime(t)} / ${fmtTime(d)}`;
 
-    if (isSynced && !isRunning && player.getPlayerState() === YT.PlayerState.PLAYING) {{
+    if (isSynced && !isRunning && player.getPlayerState() === YT.PlayerState.PLAYING) {
       const wholeSec = Math.floor(t);
-      if (Math.abs(wholeSec - lastSavedPlaybackSec) >= 3) {{
+      if (Math.abs(wholeSec - lastSavedPlaybackSec) >= 3) {
         lastSavedPlaybackSec = wholeSec;
         saveVideoSyncState(t);
-      }}
-    }}
+      }
+    }
 
-    if (isRunning && !awaitingVas && !stepTransitionLock && player.getPlayerState() === YT.PlayerState.PLAYING) {{
-      if (t >= rangeEnd) {{
-        if (vasEnabled) {{
+    if (isRunning && !awaitingVas && !stepTransitionLock && player.getPlayerState() === YT.PlayerState.PLAYING) {
+      if (t >= rangeEnd) {
+        if (vasEnabled) {
           promptVasForCurrentStep();
-        }} else {{
+        } else {
           applyStep(currentStepIdx + 1);
-        }}
+        }
         return;
-      }}
-    }}
+      }
+    }
 
     updatePlaybackHighlight(t, false);
-  }}
+  }
 
-  /* =========================================================
-     DARK-THEME DUAL-AXIS VAS PLOT (Matching plot_csv.py) & CSV
-     ========================================================= */
-  function openPlotModal() {{
+  function openPlotModal() {
     document.getElementById("plot-modal").classList.add("open");
     renderDarkVasPlot();
-  }}
+  }
 
-  function closePlotModal() {{
+  function closePlotModal() {
     document.getElementById("plot-modal").classList.remove("open");
-  }}
+  }
 
-  function clearTrialLogs() {{
+  function clearTrialLogs() {
     trialLogs = trialLogs.filter(r => r.VideoID !== videoId);
     saveTrialLogs();
     renderStepsList();
     renderDarkVasPlot();
-  }}
+  }
 
-  function renderDarkVasPlot() {{
+  function renderDarkVasPlot() {
     const canvas = document.getElementById("vas-plot-canvas");
     const emptyMsg = document.getElementById("plot-empty-msg");
     const titleEl = document.getElementById("plot-modal-title");
     const rows = trialLogs.filter(r => r.VideoID === videoId);
 
-    titleEl.textContent = `VAS Clarity & Speed — ${{videoTitle}} (${{rows.length}} trials)`;
+    titleEl.textContent = `VAS Clarity & Speed — ${videoTitle} (${rows.length} trials)`;
 
-    if (rows.length === 0) {{
+    if (rows.length === 0) {
       canvas.style.display = "none";
       emptyMsg.style.display = "block";
       return;
-    }}
+    }
     canvas.style.display = "block";
     emptyMsg.style.display = "none";
 
@@ -2257,10 +2218,9 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     const H = canvas.height;
     ctx.clearRect(0, 0, W, H);
 
-    // Dark Ninja Canvas Background
     const bgCol = "#0b1120";
-    const clarityCol = "#f43f5e";  // Vivid rose-pink (Clarity)
-    const speedCol = "#38bdf8";    // Cyan-blue (Speed)
+    const clarityCol = "#f43f5e";
+    const speedCol = "#38bdf8";
     const axisCol = "#475569";
     const gridCol = "#1e293b";
     const gridMidCol = "#334155";
@@ -2276,24 +2236,19 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     const plotW = W - padL - padR;
     const plotH = H - padT - padB;
 
-    // Synchronized axis scales matching plot_csv.py:
-    // Clarity: -5 to 105  <-->  Speed: -0.1 to 2.1
     const yClarityToPx = (c) => padT + plotH * (1 - (c - (-5)) / (105 - (-5)));
     const ySpeedToPx = (s) => padT + plotH * (1 - (s - (-0.1)) / (2.1 - (-0.1)));
     const xIdxToPx = (i) => rows.length === 1 ? (padL + plotW / 2) : (padL + (plotW * i) / (rows.length - 1));
 
-    // Top Legend (● Subtitles ON, ○ Subtitles OFF, ■ Speed)
     ctx.font = "bold 14px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
     ctx.textBaseline = "middle";
 
-    // Legend 1: Filled circle Subtitles ON
     ctx.fillStyle = clarityCol;
     ctx.beginPath();
     ctx.arc(padL + 10, 24, 5.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillText("Subtitles ON", padL + 22, 24);
 
-    // Legend 2: Hollow circle Subtitles OFF
     const leg2X = padL + 175;
     ctx.fillStyle = bgCol;
     ctx.strokeStyle = clarityCol;
@@ -2305,14 +2260,12 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     ctx.fillStyle = clarityCol;
     ctx.fillText("Subtitles OFF", leg2X + 12, 24);
 
-    // Legend 3: Square Speed
     const leg3X = W - padR - 95;
     ctx.fillStyle = speedCol;
     ctx.fillRect(leg3X - 5, 24 - 5, 10, 10);
     ctx.fillText("Speed", leg3X + 12, 24);
 
-    // Horizontal Dashed Reference Lines (0%/0x, 50%/1.0x, 100%/2.0x)
-    [0, 50, 100].forEach((val) => {{
+    [0, 50, 100].forEach((val) => {
       const y = yClarityToPx(val);
       ctx.save();
       ctx.strokeStyle = val === 50 ? gridMidCol : gridCol;
@@ -2323,9 +2276,8 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
       ctx.lineTo(W - padR, y);
       ctx.stroke();
       ctx.restore();
-    }});
+    });
 
-    // Left, Bottom, and Right Spines (Top spine hidden)
     ctx.strokeStyle = axisCol;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -2335,13 +2287,12 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     ctx.lineTo(W - padR, padT);
     ctx.stroke();
 
-    // Left Axis Labels (Clarity: 0%, 50%, 100%)
     ctx.fillStyle = clarityCol;
     ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
     ctx.textAlign = "right";
-    [0, 50, 100].forEach((val) => {{
-      ctx.fillText(`${{val}}%`, padL - 10, yClarityToPx(val));
-    }});
+    [0, 50, 100].forEach((val) => {
+      ctx.fillText(`${val}%`, padL - 10, yClarityToPx(val));
+    });
     ctx.save();
     ctx.translate(22, padT + plotH / 2);
     ctx.rotate(-Math.PI / 2);
@@ -2350,13 +2301,12 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     ctx.fillText("Clarity", 0, 0);
     ctx.restore();
 
-    // Right Axis Labels (Speed: 0x, 1.0x, 2.0x)
     ctx.fillStyle = speedCol;
     ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
     ctx.textAlign = "left";
-    [[0.0, "0x"], [1.0, "1.0x"], [2.0, "2.0x"]].forEach(([val, lbl]) => {{
+    [[0.0, "0x"], [1.0, "1.0x"], [2.0, "2.0x"]].forEach(([val, lbl]) => {
       ctx.fillText(lbl, W - padR + 10, ySpeedToPx(val));
-    }});
+    });
     ctx.save();
     ctx.translate(W - 22, padT + plotH / 2);
     ctx.rotate(Math.PI / 2);
@@ -2365,60 +2315,56 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     ctx.fillText("Speed", 0, 0);
     ctx.restore();
 
-    // X-Axis Ticks & StepIdx Labels
     ctx.fillStyle = tickLabelCol;
     ctx.font = "bold 12px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     const labelStep = rows.length > 22 ? Math.ceil(rows.length / 18) : 1;
-    rows.forEach((r, i) => {{
+    rows.forEach((r, i) => {
       const x = xIdxToPx(i);
       ctx.strokeStyle = axisCol;
       ctx.beginPath();
       ctx.moveTo(x, padT + plotH);
       ctx.lineTo(x, padT + plotH + 5);
       ctx.stroke();
-      if (i % labelStep === 0 || i === rows.length - 1) {{
+      if (i % labelStep === 0 || i === rows.length - 1) {
         ctx.fillText(String(r.StepIdx), x, padT + plotH + 9);
-      }}
-    }});
+      }
+    });
 
-    // Layer 1 (Back): Speed Dashed Cyan Line + Square Markers
     ctx.save();
     ctx.strokeStyle = speedCol;
     ctx.lineWidth = 2.5;
     ctx.setLineDash([7, 5]);
     ctx.beginPath();
-    rows.forEach((r, i) => {{
+    rows.forEach((r, i) => {
       const x = xIdxToPx(i);
       const y = ySpeedToPx(r.PlaybackRate);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
-    }});
+    });
     ctx.stroke();
     ctx.restore();
 
     ctx.fillStyle = speedCol;
-    rows.forEach((r, i) => {{
+    rows.forEach((r, i) => {
       const x = xIdxToPx(i);
       const y = ySpeedToPx(r.PlaybackRate);
       ctx.fillRect(x - 4.5, y - 4.5, 9, 9);
-    }});
+    });
 
-    // Layer 2 (Middle): Clarity Solid Rose-Pink Line
     ctx.strokeStyle = clarityCol;
     ctx.lineWidth = 3.2;
     ctx.beginPath();
-    rows.forEach((r, i) => {{
+    rows.forEach((r, i) => {
       const x = xIdxToPx(i);
       const y = yClarityToPx(r.VAS_Clarity);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
-    }});
+    });
     ctx.stroke();
 
-    // Layer 3 (Front): Clarity Circles (Filled = Subtitles ON, Hollow = Subtitles OFF)
-    rows.forEach((r, i) => {{
+    rows.forEach((r, i) => {
       const x = xIdxToPx(i);
       const y = yClarityToPx(r.VAS_Clarity);
       ctx.beginPath();
@@ -2428,28 +2374,28 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
       ctx.lineWidth = 2.6;
       ctx.fill();
       ctx.stroke();
-    }});
-  }}
+    });
+  }
 
-  function downloadPlotPng() {{
+  function downloadPlotPng() {
     const canvas = document.getElementById("vas-plot-canvas");
     if (!canvas || canvas.style.display === "none") return;
     const safeTitle = (videoTitle || videoId).replace(/[^a-zA-Z0-9 _-]/g, "_").slice(0, 36).trim();
     const link = document.createElement("a");
-    link.download = `ninja_${{safeTitle}}_${{Date.now()}}_plot.png`;
+    link.download = `ninja_${safeTitle}_${Date.now()}_plot.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
-  }}
+  }
 
-  function csvEscape(val) {{
+  function csvEscape(val) {
     const str = String(val ?? "");
-    if (/[",\n]/.test(str)) {{
-      return `"${{str.replace(/"/g, '""')}}"`;
-    }}
+    if (/[",\n]/.test(str)) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
     return str;
-  }}
+  }
 
-  function exportLogsCsv() {{
+  function exportLogsCsv() {
     const rows = trialLogs.filter(r => r.VideoID === videoId);
     if (rows.length === 0) return;
 
@@ -2459,135 +2405,146 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
       "URL", "Title", "Protocol"
     ];
     const lines = [headers.join(",")];
-    rows.forEach((r) => {{
-      const vals = headers.map((h) => {{
+    rows.forEach((r) => {
+      const vals = headers.map((h) => {
         if (h === "Subtitles") return r.Subtitles ? "True" : "False";
         if (h === "PlaybackRate") return Number(r.PlaybackRate).toFixed(1);
         return csvEscape(r[h]);
-      }});
+      });
       lines.push(vals.join(","));
-    }});
+    });
 
-    const blob = new Blob([lines.join("\n")], {{ type: "text/csv;charset=utf-8;" }});
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const safeTitle = (videoTitle || videoId).replace(/[^a-zA-Z0-9 _-]/g, "_").slice(0, 36).trim();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ninja_${{safeTitle}}_${{Date.now()}}.csv`;
+    a.download = `ninja_${safeTitle}_${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }}
+  }
 
-  /* Protocol Customization & Named Sequence Modal */
   let draftSteps = [];
   let editingCustomId = null;
 
-  function openModal(createNew = false) {{
+  function openModal(createNew = false) {
     if (isRunning) return;
     const nameInput = document.getElementById("custom-seq-name");
     const delBtn = document.getElementById("del-custom-btn");
 
-    if (!createNew && customProtocols[selectedProtocolId]) {{
+    if (!createNew && customProtocols[selectedProtocolId]) {
       editingCustomId = selectedProtocolId;
       nameInput.value = customProtocols[selectedProtocolId].name;
       delBtn.style.display = "inline-block";
-    }} else {{
+    } else {
       editingCustomId = null;
       const baseName = getProtocolById(selectedProtocolId).name;
-      nameInput.value = createNew ? "Custom Sequence" : `${{baseName}} (Custom)`;
+      nameInput.value = createNew ? "Custom Sequence" : `${baseName} (Custom)`;
       delBtn.style.display = "none";
-    }}
+    }
 
-    draftSteps = steps.map(s => ({{ ...s }}));
+    draftSteps = steps.map(s => ({ ...s }));
     renderModalBody();
     document.getElementById("cfg-modal").classList.add("open");
-  }}
+  }
 
-  function closeModal() {{
+  function closeModal() {
     document.getElementById("cfg-modal").classList.remove("open");
-  }}
+  }
 
-  function renderModalBody() {{
+  function renderModalBody() {
     const body = document.getElementById("modal-steps-body");
     body.innerHTML = "";
-    draftSteps.forEach((stItem, idx) => {{
+    draftSteps.forEach((stItem, idx) => {
       const r = document.createElement("div");
       r.className = "edit-row";
       r.innerHTML = `
-        <span>${{idx + 1}}</span>
-        <input type="number" step="0.1" min="0.25" max="2.0" value="${{stItem.speed}}"
-               onchange="draftSteps[${{idx}}].speed = parseFloat(this.value) || 1.0" />
-        <label><input type="checkbox" ${{stItem.cc ? "checked" : ""}}
-               onchange="draftSteps[${{idx}}].cc = this.checked" /> CC</label>
+        <span>${idx + 1}</span>
+        <input type="number" step="0.1" min="0.25" max="2.0" value="${stItem.speed}"
+               onchange="draftSteps[${idx}].speed = parseFloat(this.value) || 1.0" />
+        <label><input type="checkbox" ${stItem.cc ? "checked" : ""}
+               onchange="draftSteps[${idx}].cc = this.checked" /> CC</label>
         <div style="text-align:right;">
-          <button class="nudge-btn" onclick="moveDraft(${{idx}}, -1)">↑</button>
-          <button class="nudge-btn" onclick="moveDraft(${{idx}}, 1)">↓</button>
-          <button class="nudge-btn" onclick="delDraft(${{idx}})">✕</button>
+          <button class="nudge-btn" onclick="moveDraft(${idx}, -1)">↑</button>
+          <button class="nudge-btn" onclick="moveDraft(${idx}, 1)">↓</button>
+          <button class="nudge-btn" onclick="delDraft(${idx})">✕</button>
         </div>
       `;
       body.appendChild(r);
-    }});
-  }}
+    });
+  }
 
-  function moveDraft(idx, dir) {{
+  function moveDraft(idx, dir) {
     const target = idx + dir;
     if (target < 0 || target >= draftSteps.length) return;
     [draftSteps[idx], draftSteps[target]] = [draftSteps[target], draftSteps[idx]];
     renderModalBody();
-  }}
+  }
 
-  function delDraft(idx) {{
+  function delDraft(idx) {
     draftSteps.splice(idx, 1);
     renderModalBody();
-  }}
+  }
 
-  function addStepRow() {{
-    draftSteps.push({{ speed: 1.0, cc: false }});
+  function addStepRow() {
+    draftSteps.push({ speed: 1.0, cc: false });
     renderModalBody();
-  }}
+  }
 
-  function resetDraftToSelected() {{
-    draftSteps = getProtocolById(selectedProtocolId).steps.map(s => ({{ ...s }}));
+  function resetDraftToSelected() {
+    draftSteps = getProtocolById(selectedProtocolId).steps.map(s => ({ ...s }));
     renderModalBody();
-  }}
+  }
 
-  function saveModalSteps() {{
+  function saveModalSteps() {
     if (draftSteps.length === 0) return;
     const rawName = document.getElementById("custom-seq-name").value.trim();
     const seqName = rawName || "Custom Sequence";
     const targetId = editingCustomId || ("custom_" + Date.now());
 
-    customProtocols[targetId] = {{
+    customProtocols[targetId] = {
       name: seqName,
       shortKey: seqName.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
-      steps: draftSteps.map(s => ({{ ...s }}))
-    }};
+      steps: draftSteps.map(s => ({ ...s }))
+    };
     saveCustomProtocols(customProtocols);
 
     selectedProtocolId = targetId;
     localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocolId);
-    steps = customProtocols[targetId].steps.map(s => ({{ ...s }}));
+    steps = customProtocols[targetId].steps.map(s => ({ ...s }));
 
     renderProtocolDropdown();
     renderStepsList();
     closeModal();
-  }}
+  }
 
-  function deleteCurrentCustomProtocol() {{
+  function deleteCurrentCustomProtocol() {
     if (!editingCustomId || !customProtocols[editingCustomId]) return;
     delete customProtocols[editingCustomId];
     saveCustomProtocols(customProtocols);
     selectedProtocolId = "anchor_06";
     localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocolId);
-    steps = getProtocolById(selectedProtocolId).steps.map(s => ({{ ...s }}));
+    steps = getProtocolById(selectedProtocolId).steps.map(s => ({ ...s }));
     renderProtocolDropdown();
     renderStepsList();
     closeModal();
-  }}
+  }
 </script>
 </body>
 </html>
 """
+
+
+def build_player_html(video_id: str, captions: list[dict], source_url: str) -> str:
+    safe_captions = json.dumps(captions, ensure_ascii=False).replace("</", "<\\/")
+    safe_vid = json.dumps(video_id).replace("</", "<\\/")
+    safe_url = json.dumps(source_url, ensure_ascii=False).replace("</", "<\\/")
+    return (
+        HTML_TEMPLATE
+        .replace("__CAPTIONS_JSON__", safe_captions)
+        .replace("__VIDEO_ID_JSON__", safe_vid)
+        .replace("__SOURCE_URL_JSON__", safe_url)
+    )
 
 
 col_url, col_merge = st.columns([5, 1])
