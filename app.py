@@ -26,12 +26,16 @@ from audio_processing import (
 from views_a1 import build_spike2_html
 from views_b1 import build_b1_scope_html
 from views_e2 import build_e2_multiview_canvas_html, build_clickable_word_map_html
+from views_listening import render_ninja_listening
 
 st.set_page_config(page_title="NinjaPhonetics: Biofeedback Scope", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(APP_CUSTOM_CSS, unsafe_allow_html=True)
 
 # セッション状態初期化
-if "app_mode" not in st.session_state: st.session_state.app_mode = "RL"
+VALID_MODES = {"RL", "SIBILANT", "RHYTHM", "LISTENING"}
+if "app_mode" not in st.session_state:
+    qp_mode = st.query_params.get("mode", "RL")
+    st.session_state.app_mode = qp_mode if qp_mode in VALID_MODES else "RL"
 if "current_label" not in st.session_state: st.session_state.current_label = "お手本: Right (US)"
 if "a1_target_word" not in st.session_state: st.session_state.a1_target_word = "right"
 if "current_audio_bytes" not in st.session_state:
@@ -74,16 +78,27 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-tab_m1, tab_m2, tab_m3, _ = st.columns([1.45, 1.55, 1.55, 1.45])
+tab_m1, tab_m2, tab_m3, tab_m4 = st.columns([1.45, 1.55, 1.55, 1.45])
 with tab_m1:
     if st.button("A1: 音素ホルマント (R / L)", type="primary" if st.session_state.app_mode == "RL" else "secondary", use_container_width=True):
-        st.session_state.app_mode = "RL"; st.rerun()
+        st.session_state.app_mode = "RL"
+        st.query_params["mode"] = "RL"
+        st.rerun()
 with tab_m2:
     if st.button("B1: 歯擦音スコープ (/si/ vs /ʃi/)", type="primary" if st.session_state.app_mode == "SIBILANT" else "secondary", use_container_width=True):
-        st.session_state.app_mode = "SIBILANT"; st.rerun()
+        st.session_state.app_mode = "SIBILANT"
+        st.query_params["mode"] = "SIBILANT"
+        st.rerun()
 with tab_m3:
     if st.button("E2: プロソディ＆ストレス拍診断", type="primary" if st.session_state.app_mode == "RHYTHM" else "secondary", use_container_width=True):
-        st.session_state.app_mode = "RHYTHM"; st.rerun()
+        st.session_state.app_mode = "RHYTHM"
+        st.query_params["mode"] = "RHYTHM"
+        st.rerun()
+with tab_m4:
+    if st.button("L1: Ninja Listening (YouTube)", type="primary" if st.session_state.app_mode == "LISTENING" else "secondary", use_container_width=True):
+        st.session_state.app_mode = "LISTENING"
+        st.query_params["mode"] = "LISTENING"
+        st.rerun()
 
 # -------------------------------------------------------------
 # A1 モード
@@ -377,7 +392,7 @@ elif st.session_state.app_mode == "SIBILANT":
 # -------------------------------------------------------------
 # E2 モード (長文ベンチマーク専用)
 # -------------------------------------------------------------
-else:
+elif st.session_state.app_mode == "RHYTHM":
     p_col1, p_col2, p_col3, _ = st.columns([1.3, 1.3, 1.3, 2.1])
     with p_col1:
         if st.button("P1: 北風と太陽 (113語)", type="primary" if st.session_state.e2_selected_passage == "P1_northwind" else "secondary", use_container_width=True):
@@ -543,3 +558,9 @@ th {{ position: sticky; top: 0; background: #0F172A; color: #94A3B8; font-size: 
         trial_num = len(st.session_state.e2_eval_history)
         map_html = build_clickable_word_map_html(latest_wb, st.session_state.e2_audio_bytes, trial_num)
         components.html(map_html, height=155, scrolling=False)
+
+# -------------------------------------------------------------
+# L1 モード (Ninja Listening Trainer - YouTube)
+# -------------------------------------------------------------
+elif st.session_state.app_mode == "LISTENING":
+    render_ninja_listening()
