@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import re
 import streamlit as st
 import streamlit.components.v1 as components
@@ -15,14 +16,14 @@ st.markdown(
     <style>
     .block-container {
         max-width: 100% !important;
-        padding-top: 0.45rem !important;
-        padding-bottom: 0.2rem !important;
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
+        padding-top: 0.35rem !important;
+        padding-bottom: 0.1rem !important;
+        padding-left: 0.4rem !important;
+        padding-right: 0.4rem !important;
     }
     header[data-testid="stHeader"] { display: none; }
     div[data-testid="stTextInput"] {
-        margin-bottom: -0.5rem !important;
+        margin-bottom: -0.45rem !important;
     }
     iframe {
         display: block;
@@ -32,6 +33,28 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+STATE_FILE = Path.home() / ".ninja_listening_state.json"
+
+
+def load_last_video_id() -> str:
+    try:
+        if STATE_FILE.exists():
+            data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            return str(data.get("last_video_id", "")).strip()
+    except Exception:
+        pass
+    return ""
+
+
+def save_last_video_id(video_id: str) -> None:
+    try:
+        STATE_FILE.write_text(
+            json.dumps({"last_video_id": video_id}),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
 
 
 def extract_video_id(url: str) -> str | None:
@@ -85,7 +108,7 @@ def merge_into_sentences(raw_items: list[dict]) -> list[dict]:
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def fetch_transcript(video_id: str, merge_sentences: bool = True, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
+def fetch_transcript(video_id: str, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
     if hasattr(YouTubeTranscriptApi, "fetch") or not hasattr(YouTubeTranscriptApi, "get_transcript"):
         api = YouTubeTranscriptApi()
         fetched = api.fetch(video_id, languages=list(languages))
@@ -109,7 +132,7 @@ def fetch_transcript(video_id: str, merge_sentences: bool = True, languages: tup
             }
             for item in raw
         ]
-    return merge_into_sentences(items) if merge_sentences else items
+    return merge_into_sentences(items)
 
 
 HTML_TEMPLATE = r"""<!DOCTYPE html>
@@ -123,10 +146,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     --panel: #0b1120;
     --card: #1e293b;
     --accent: #2ba2bd;
+    --primary-blue: #2563eb;
+    --neon-magenta: #ff00cc;
+    --neon-cyan: #00d2ff;
     --start-color: #10b981;
     --end-color: #f59e0b;
-    --clarity-color: #f43f5e;
-    --speed-color: #38bdf8;
+    --yt-red: #ff0000;
     --danger: #ef4444;
     --text: #e2e8f0;
     --muted: #64748b;
@@ -155,9 +180,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     background: #1e293b;
     border-bottom: 1px solid #334155;
     color: #ffffff;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
-    padding: 7px 14px;
+    padding: 6px 12px;
     text-align: center;
     letter-spacing: 0.01em;
     flex-shrink: 0;
@@ -201,6 +226,53 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     gap: 6px;
     min-height: 26px;
   }
+  .meta-left-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .url-toggle-btn {
+    background: var(--card);
+    color: #cbd5e1;
+    border: 1px solid #334155;
+    border-radius: 5px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    line-height: 1.2;
+  }
+  .url-toggle-btn:hover,
+  .url-toggle-btn.active {
+    color: #ffffff;
+    border-color: #64748b;
+  }
+  .yt-play-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 22px;
+    background: var(--yt-red);
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+    transition: transform 0.08s, filter 0.14s;
+  }
+  .yt-play-btn:hover {
+    filter: brightness(1.08);
+  }
+  .yt-play-btn:active {
+    transform: scale(0.94);
+  }
+  .yt-play-btn svg {
+    width: 13px;
+    height: 13px;
+    fill: #ffffff;
+    display: block;
+  }
   .time-display {
     color: #94a3b8;
     font-variant-numeric: tabular-nums;
@@ -235,7 +307,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     font-size: 10.5px;
     font-weight: 600;
     cursor: pointer;
-    transition: opacity 0.2s;
   }
   .offset-badge {
     color: #e2e8f0;
@@ -259,7 +330,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     align-items: center;
     justify-content: space-between;
     gap: 4px;
-    transition: opacity 0.2s;
   }
   .nudge-group {
     display: flex;
@@ -288,29 +358,25 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     color: #fff;
   }
 
+  /* =========================================================
+     HIDE SETUP CONTROLS COMPLETELY DURING ACTIVE SEQUENCE (RUN)
+     ========================================================= */
   .app-shell.sequence-running .sync-nudge-grid,
   .app-shell.sequence-running .unsync-btn,
-  .app-shell.sequence-running .saved-tag {
-    opacity: 0.22;
-    pointer-events: none;
+  .app-shell.sequence-running .saved-tag,
+  .app-shell.sequence-running .url-toggle-btn,
+  .app-shell.sequence-running .range-row {
+    display: none !important;
   }
   .app-shell.sequence-running .protocol-select,
-  .app-shell.sequence-running .mark-btn,
-  .app-shell.sequence-running .next-btn,
   .app-shell.sequence-running .run-btn,
   .app-shell.sequence-running .cfg-btn {
     opacity: 0.24;
     pointer-events: none;
   }
-  .app-shell.sequence-running .mark-box {
-    border-color: #1e293b;
-  }
-  .app-shell.sequence-running .mark-val {
-    opacity: 0.55;
-  }
 
   .transcript-area {
-    flex: 1.15;
+    flex: 1.25;
     overflow-y: auto;
     padding: 6px 8px;
     scroll-behavior: smooth;
@@ -547,13 +613,16 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
   .mode-off .blind-notice { display: flex; }
 
+  /* =========================================================
+     PURE CONTINUOUS VAS DRAWER (Unified Primary Blue Theme)
+     ========================================================= */
   .vas-drawer {
     display: none;
     background: #0f172a;
     border-top: 1px solid #334155;
-    padding: 12px 16px;
+    padding: 10px 14px;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     flex-shrink: 0;
   }
   .vas-drawer.open {
@@ -563,14 +632,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 700;
     color: #f8fafc;
   }
   .vas-score-readout {
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 800;
-    color: var(--clarity-color);
+    color: #60a5fa;
     font-variant-numeric: tabular-nums;
   }
   .vas-slider-wrap {
@@ -585,48 +654,29 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
   input[type="range"].vas-slider {
     flex: 1;
-    accent-color: var(--clarity-color);
+    accent-color: var(--primary-blue);
     height: 6px;
     cursor: pointer;
   }
   .vas-actions-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 8px;
   }
-  .vas-presets {
-    display: flex;
-    gap: 5px;
-  }
-  .vas-preset-btn {
-    background: #1e293b;
-    color: #cbd5e1;
-    border: 1px solid #334155;
-    border-radius: 5px;
-    padding: 4px 9px;
-    font-size: 11.5px;
-    font-weight: 600;
-    cursor: pointer;
-    font-variant-numeric: tabular-nums;
-  }
-  .vas-preset-btn:hover {
-    border-color: var(--clarity-color);
-    color: #fff;
-  }
   .vas-submit-btn {
-    background: var(--clarity-color);
+    background: var(--primary-blue);
     color: #ffffff;
     border: none;
     border-radius: 6px;
     padding: 7px 18px;
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 700;
     cursor: pointer;
     white-space: nowrap;
   }
   .vas-submit-btn:hover {
-    filter: brightness(1.08);
+    background: #3b82f6;
   }
 
   .ninja-panel {
@@ -640,6 +690,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     min-height: 0;
     transition: opacity 0.22s ease, filter 0.22s ease;
   }
+  @media (orientation: portrait) {
+    .ninja-panel.steps-collapsed {
+      flex: 0 0 auto;
+    }
+    .ninja-panel.steps-collapsed .steps-list {
+      display: none;
+    }
+  }
+
   .ninja-panel.locked-unsynced {
     opacity: 0.34;
     pointer-events: none;
@@ -730,7 +789,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     border: 1px solid #334155;
     border-radius: 6px;
     overflow: hidden;
-    transition: border-color 0.2s;
   }
   .mark-box.start-box {
     border-color: rgba(16, 185, 129, 0.45);
@@ -746,7 +804,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     font-weight: 700;
     cursor: pointer;
     white-space: nowrap;
-    transition: opacity 0.2s, background 0.14s;
   }
   .mark-btn.start-btn {
     background: #059669;
@@ -767,7 +824,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     font-variant-numeric: tabular-nums;
     padding: 0 4px;
     font-weight: 600;
-    transition: opacity 0.2s;
   }
   .mark-val.start-val { color: #6ee7b7; }
   .mark-val.end-val { color: #fcd34d; }
@@ -781,7 +837,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
-    transition: opacity 0.2s;
   }
   .run-row {
     display: grid;
@@ -790,7 +845,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     flex-shrink: 0;
   }
   .run-btn {
-    background: #2563eb;
+    background: var(--primary-blue);
     color: #fff;
     border: none;
     border-radius: 6px;
@@ -822,7 +877,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     transition: opacity 0.2s;
   }
   .steps-header {
-    font-size: 10px;
+    font-size: 10.5px;
     font-weight: 700;
     color: var(--muted);
     letter-spacing: 0.04em;
@@ -830,7 +885,25 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     justify-content: space-between;
     align-items: center;
     flex-shrink: 0;
-    transition: opacity 0.2s;
+    padding: 2px 2px;
+    user-select: none;
+  }
+  .steps-toggle-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    color: #cbd5e1;
+  }
+  .steps-chevron {
+    display: none;
+    font-size: 11px;
+    color: #94a3b8;
+  }
+  @media (orientation: portrait) {
+    .steps-chevron {
+      display: inline;
+    }
   }
   .vas-mode-toggle {
     display: inline-flex;
@@ -848,7 +921,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     border-radius: 6px;
     background: #020617;
     min-height: 0;
-    transition: opacity 0.2s;
   }
   .step-item {
     display: grid;
@@ -874,8 +946,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .step-vas-pill {
     font-size: 10.5px;
     font-weight: 700;
-    color: #fb7185;
-    background: rgba(244, 63, 94, 0.14);
+    color: #60a5fa;
+    background: rgba(37, 99, 235, 0.22);
     padding: 1px 6px;
     border-radius: 999px;
   }
@@ -903,7 +975,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   @media (min-width: 640px) and (orientation: landscape) {
     .app-shell {
       display: grid;
-      grid-template-columns: minmax(340px, 46%) 1fr;
+      grid-template-columns: minmax(320px, 46%) 1fr;
       grid-template-rows: auto auto 1fr auto;
       grid-template-areas:
         "banner banner"
@@ -920,7 +992,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       border-right: 1px solid #1e293b;
     }
     .player-wrap {
-      max-height: min(35vh, 280px);
+      max-height: min(35vh, 260px);
     }
     .ninja-panel {
       grid-area: ninja;
@@ -943,11 +1015,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.78);
+    background: rgba(0, 0, 0, 0.82);
     z-index: 50;
     align-items: center;
     justify-content: center;
-    padding: 12px;
+    padding: 8px;
   }
   .modal-backdrop.open { display: flex; }
   .modal-box {
@@ -956,24 +1028,34 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     border-radius: 10px;
     width: 100%;
     max-width: 460px;
-    max-height: 85vh;
+    max-height: 92vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
   .modal-box.plot-modal-box {
-    max-width: 780px;
-    background: #0f172a;
+    width: 96vw;
+    max-width: 820px;
+    max-height: 94vh;
+    background: #181818;
   }
   .modal-head {
-    padding: 10px 14px;
+    padding: 8px 12px;
     font-weight: 700;
-    font-size: 14px;
+    font-size: 13px;
     border-bottom: 1px solid #334155;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 8px;
     background: #1e293b;
+    flex-shrink: 0;
+  }
+  .modal-head-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
   .modal-name-bar {
     padding: 8px 12px;
@@ -1000,19 +1082,24 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     flex: 1;
   }
   .plot-canvas-wrap {
-    padding: 12px;
-    background: #0b1120;
+    padding: 6px 10px;
+    background: #181818;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    justify-content: center;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
   #vas-plot-canvas {
-    width: 100%;
+    width: auto;
     height: auto;
-    max-height: 360px;
+    max-width: 100%;
+    max-height: calc(94vh - 86px);
+    object-fit: contain;
     border-radius: 6px;
-    background: #0b1120;
+    background: #181818;
   }
   .edit-row {
     display: grid;
@@ -1031,26 +1118,29 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     padding: 4px;
   }
   .modal-foot {
-    padding: 8px 14px;
+    padding: 6px 12px;
     border-top: 1px solid #334155;
     display: flex;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 6px;
     justify-content: space-between;
     align-items: center;
     background: #1e293b;
+    flex-shrink: 0;
   }
   .export-btn {
-    background: #10b981;
+    background: var(--neon-cyan);
     color: #020617;
     border: none;
     border-radius: 6px;
-    padding: 6px 14px;
-    font-size: 12px;
+    padding: 5px 12px;
+    font-size: 11.5px;
     font-weight: 800;
     cursor: pointer;
+    white-space: nowrap;
   }
   .export-btn:hover {
-    background: #34d399;
+    filter: brightness(1.1);
   }
 </style>
 </head>
@@ -1091,13 +1181,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <span class="vas-end-label">100% Crystal Clear</span>
     </div>
     <div class="vas-actions-row">
-      <div class="vas-presets">
-        <button class="vas-preset-btn" onclick="setVasVal(0)">0</button>
-        <button class="vas-preset-btn" onclick="setVasVal(25)">25</button>
-        <button class="vas-preset-btn" onclick="setVasVal(50)">50</button>
-        <button class="vas-preset-btn" onclick="setVasVal(75)">75</button>
-        <button class="vas-preset-btn" onclick="setVasVal(100)">100</button>
-      </div>
       <button class="vas-submit-btn" onclick="submitVasAndContinue()">Record &amp; Next →</button>
     </div>
   </div>
@@ -1106,7 +1189,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="ninja-header">
       <select class="protocol-select" id="protocol-select" data-tip="Switch training protocol" onchange="onProtocolChange(this.value)"></select>
       <div class="header-right-group">
-        <button class="log-pill-btn" id="log-pill-btn" data-tip="View dark-theme VAS plot &amp; export CSV" onclick="openPlotModal()">📊 0</button>
+        <button class="log-pill-btn" id="log-pill-btn" data-tip="View neon VAS plot &amp; export CSV" onclick="openPlotModal()">📊 0</button>
         <span class="status-badge" id="status-badge">Step 1: Sync</span>
       </div>
     </div>
@@ -1130,7 +1213,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </div>
 
     <div class="steps-header">
-      <span>STEPS (TAP TO JUMP IN)</span>
+      <span class="steps-toggle-trigger" onclick="toggleStepsDrawer()">
+        <span>STEPS (TAP TO JUMP IN)</span>
+        <span class="steps-chevron" id="steps-chevron">▾</span>
+      </span>
       <div style="display:flex;align-items:center;gap:8px;">
         <label class="vas-mode-toggle" data-tip="Ask VAS Clarity rating after each step">
           <input type="checkbox" id="vas-enabled-chk" checked onchange="toggleVasEnabled(this.checked)" />
@@ -1146,7 +1232,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <div class="modal-backdrop" id="plot-modal">
   <div class="modal-box plot-modal-box">
     <div class="modal-head">
-      <span id="plot-modal-title">VAS Clarity &amp; Speed Log</span>
+      <span class="modal-head-title" id="plot-modal-title">VAS Clarity &amp; Speed Log</span>
       <button class="nudge-btn" onclick="closePlotModal()">✕</button>
     </div>
     <div class="plot-canvas-wrap">
@@ -1156,12 +1242,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       </div>
     </div>
     <div class="modal-foot">
-      <div style="display:flex;align-items:center;gap:6px;">
-        <span style="font-size:11.5px;color:#94a3b8;">SubjectID:</span>
+      <div style="display:flex;align-items:center;gap:5px;">
+        <span style="font-size:11px;color:#94a3b8;">ID:</span>
         <input type="text" id="subject-id-input" value="SUBJ_001"
-               style="width:92px;background:#0f172a;color:#fff;border:1px solid #475569;border-radius:4px;padding:4px 6px;font-size:11.5px;"
+               style="width:82px;background:#0f172a;color:#fff;border:1px solid #475569;border-radius:4px;padding:3px 6px;font-size:11px;"
                onchange="saveSubjectId(this.value)" />
-        <button class="nudge-btn" style="color:#f87171;border-color:rgba(239,68,68,0.45);" onclick="clearTrialLogs()">Clear Log</button>
+        <button class="nudge-btn" onclick="clearTrialLogs()">Clear</button>
       </div>
       <div style="display:flex;gap:6px;">
         <button class="nudge-btn" onclick="downloadPlotPng()">⬇ PNG</button>
@@ -1196,12 +1282,49 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </div>
 
 <script>
+  const captions = __CAPTIONS_JSON__;
+  const videoId = __VIDEO_ID_JSON__;
+  const sourceUrl = __SOURCE_URL_JSON__;
+
+  let urlBarManuallyVisible = false;
+
+  try {
+    if (window.parent && window.parent.history && videoId) {
+      const parentUrl = new URL(window.parent.location.href);
+      if (parentUrl.searchParams.get("v") !== videoId) {
+        parentUrl.searchParams.set("v", videoId);
+        window.parent.history.replaceState(null, "", parentUrl.toString());
+      }
+    }
+  } catch (e) {}
+
+  function applyParentUrlBarVisibility() {
+    try {
+      if (!window.parent || !window.parent.document) return;
+      const inputBlock = window.parent.document.querySelector('div[data-testid="stTextInput"]');
+      if (inputBlock) {
+        const container = inputBlock.closest('div[data-testid="element-container"]') || inputBlock;
+        const shouldShow = !isRunning && urlBarManuallyVisible;
+        container.style.display = shouldShow ? "" : "none";
+      }
+    } catch (e) {}
+    setTimeout(fitParentIframe, 25);
+  }
+
+  function toggleUrlBar() {
+    if (isRunning) return;
+    urlBarManuallyVisible = !urlBarManuallyVisible;
+    applyParentUrlBarVisibility();
+    const btn = document.getElementById("url-toggle-btn");
+    if (btn) btn.classList.toggle("active", urlBarManuallyVisible);
+  }
+
   function fitParentIframe() {
     try {
       const frame = window.frameElement;
       if (frame && window.parent) {
         const topOffset = frame.getBoundingClientRect().top;
-        const avail = Math.max(300, window.parent.innerHeight - topOffset - 6);
+        const avail = Math.max(280, window.parent.innerHeight - topOffset - 4);
         frame.style.height = avail + "px";
       }
     } catch (e) {}
@@ -1240,9 +1363,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     tooltipEl.classList.remove("visible");
   });
 
-  const captions = __CAPTIONS_JSON__;
-  const videoId = __VIDEO_ID_JSON__;
-  const sourceUrl = __SOURCE_URL_JSON__;
   const DEFAULT_SPAN = 30.0;
   const SYNC_CACHE_KEY = "ninja_sync_cache_v1";
   const CUSTOM_PROTOCOLS_KEY = "ninja_custom_protocols_v1";
@@ -1250,6 +1370,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   const TRIAL_LOG_KEY = "ninja_trial_logs_v1";
   const SUBJECT_ID_KEY = "ninja_subject_id_v1";
   const MAX_CACHE_ENTRIES = 100;
+
+  const YT_PLAY_ICON = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+  const YT_PAUSE_ICON = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
 
   function buildShadowingSteps() {
     const list = [
@@ -1371,6 +1494,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   let awaitingVas = false;
   let currentStepIdx = -1;
   let stepTransitionLock = false;
+  let stepsCollapsedPortrait = false;
 
   let userScrolling = false;
   let scrollTimeout = null;
@@ -1386,6 +1510,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   const endValEl = document.getElementById("end-val");
   const statusBadge = document.getElementById("status-badge");
   const stepsListEl = document.getElementById("steps-list");
+  const stepsChevronEl = document.getElementById("steps-chevron");
   const blindStepLabel = document.getElementById("blind-step-label");
   const vasDrawerEl = document.getElementById("vas-drawer");
   const vasSliderEl = document.getElementById("vas-slider");
@@ -1394,6 +1519,38 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   document.getElementById("vas-enabled-chk").checked = vasEnabled;
   document.getElementById("subject-id-input").value = subjectId;
+
+  function togglePlayPause() {
+    if (!player || typeof player.getPlayerState !== "function") return;
+    const state = player.getPlayerState();
+    if (state === YT.PlayerState.PLAYING) {
+      player.pauseVideo();
+    } else {
+      player.playVideo();
+    }
+  }
+
+  function updatePlayButtonIcon() {
+    const btn = document.getElementById("play-toggle-btn");
+    if (!btn || !player || typeof player.getPlayerState !== "function") return;
+    const playing = player.getPlayerState() === YT.PlayerState.PLAYING;
+    btn.innerHTML = playing ? YT_PAUSE_ICON : YT_PLAY_ICON;
+  }
+
+  function setStepsCollapsedPortrait(collapsed) {
+    stepsCollapsedPortrait = collapsed;
+    ninjaPanelEl.classList.toggle("steps-collapsed", collapsed);
+    if (stepsChevronEl) {
+      stepsChevronEl.textContent = collapsed ? "▸" : "▾";
+    }
+  }
+
+  function toggleStepsDrawer() {
+    setStepsCollapsedPortrait(!stepsCollapsedPortrait);
+    if (!stepsCollapsedPortrait && isRunning && currentStepIdx >= 0) {
+      document.getElementById("step-row-" + currentStepIdx)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
 
   function saveTrialLogs() {
     try {
@@ -1423,11 +1580,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
 
   function onVasSliderInput(val) {
-    vasScoreReadoutEl.textContent = `${val}%`;
-  }
-
-  function setVasVal(val) {
-    vasSliderEl.value = val;
     vasScoreReadoutEl.textContent = `${val}%`;
   }
 
@@ -1623,6 +1775,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     appShellEl.classList.toggle("sequence-running", isRunning);
     ninjaPanelEl.classList.toggle("running-active", isRunning);
     areaEl.classList.toggle("awaiting-range", isSynced && !hasUserRange);
+    applyParentUrlBarVisibility();
 
     if (!isSynced) {
       ninjaPanelEl.classList.add("locked-unsynced");
@@ -1647,10 +1800,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   function renderSyncBar() {
     const curTimeText = document.getElementById("time-display")?.textContent || "00:00 / 00:00";
+    const urlBtnClass = `url-toggle-btn${urlBarManuallyVisible ? " active" : ""}`;
     if (!isSynced) {
       metaBarEl.innerHTML = `
         <div class="meta-top">
-          <div class="time-display" id="time-display">${curTimeText}</div>
+          <div class="meta-left-controls">
+            <button class="${urlBtnClass}" id="url-toggle-btn" data-tip="Change YouTube URL" onclick="toggleUrlBar()">🔗 URL</button>
+            <button class="yt-play-btn" id="play-toggle-btn" data-tip="Play / Pause video" onclick="togglePlayPause()">${YT_PLAY_ICON}</button>
+            <div class="time-display" id="time-display">${curTimeText}</div>
+          </div>
           <button class="sync-ok-btn" data-tip="Accept current 0.0s subtitle timing as synced" onclick="acceptSyncAsIs()">✓ Sync OK</button>
         </div>
       `;
@@ -1659,7 +1817,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       const savedHtml = restoredFromCache ? `<span class="saved-tag">Saved</span>` : "";
       metaBarEl.innerHTML = `
         <div class="meta-top">
-          <div class="time-display" id="time-display">${curTimeText}</div>
+          <div class="meta-left-controls">
+            <button class="${urlBtnClass}" id="url-toggle-btn" data-tip="Change YouTube URL" onclick="toggleUrlBar()">🔗 URL</button>
+            <button class="yt-play-btn" id="play-toggle-btn" data-tip="Play / Pause video" onclick="togglePlayPause()">${YT_PLAY_ICON}</button>
+            <div class="time-display" id="time-display">${curTimeText}</div>
+          </div>
           <div>
             ${savedHtml}<span class="offset-badge">${sign}${timeOffset.toFixed(1)}s</span>
             <button class="unsync-btn" data-tip="Clear saved sync and reset" onclick="unsyncAll()">Unsync</button>
@@ -1683,6 +1845,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         </div>
       `;
     }
+    updatePlayButtonIcon();
     updatePanelLockState();
   }
 
@@ -1984,6 +2147,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     vasDrawerEl.classList.remove("open");
     isRunning = true;
     areaEl.classList.add("training-active");
+    setStepsCollapsedPortrait(true);
     updatePanelLockState();
     applyStep(startIdx);
   }
@@ -1995,6 +2159,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       vasDrawerEl.classList.remove("open");
       currentStepIdx = -1;
       areaEl.classList.remove("training-active");
+      setStepsCollapsedPortrait(false);
       player.pauseVideo();
       player.setPlaybackRate(1.0);
       setCCVisibility(true);
@@ -2014,7 +2179,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
     renderStepsList();
     const activeRow = document.getElementById("step-row-" + idx);
-    if (activeRow) activeRow.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (activeRow && !stepsCollapsedPortrait) {
+      activeRow.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
 
     player.seekTo(rangeStart, true);
     player.playVideo();
@@ -2029,6 +2196,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     vasDrawerEl.classList.remove("open");
     currentStepIdx = -1;
     areaEl.classList.remove("training-active");
+    setStepsCollapsedPortrait(false);
     if (player && typeof player.pauseVideo === "function") {
       player.pauseVideo();
       player.setPlaybackRate(1.0);
@@ -2068,6 +2236,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       videoId: videoId,
       playerVars: {
         playsinline: 1,
+        controls: 0,
+        iv_load_policy: 3,
         cc_load_policy: 0,
         rel: 0,
         modestbranding: 1,
@@ -2093,6 +2263,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
           setInterval(mainLoop, 100);
         },
         onStateChange: () => {
+          updatePlayButtonIcon();
           try {
             const data = player.getVideoData();
             if (data && data.title) videoTitle = data.title;
@@ -2218,13 +2389,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     const H = canvas.height;
     ctx.clearRect(0, 0, W, H);
 
-    const bgCol = "#0b1120";
-    const clarityCol = "#f43f5e";
-    const speedCol = "#38bdf8";
-    const axisCol = "#475569";
-    const gridCol = "#1e293b";
-    const gridMidCol = "#334155";
-    const tickLabelCol = "#94a3b8";
+    // chart.js neon ninja color scheme
+    const bgCol = "#181818";
+    const clarityCol = "#ff00cc"; // Neon magenta (Clarity)
+    const speedCol = "#00d2ff";   // Neon cyan (Speed)
+    const edgeCol = "#ffffff";    // Crisp white marker edge
+    const axisCol = "#444444";
+    const gridCol = "#333333";
+    const gridMidCol = "#444444";
+    const tickLabelCol = "#aaaaaa";
 
     ctx.fillStyle = bgCol;
     ctx.fillRect(0, 0, W, H);
@@ -2232,7 +2405,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     const padL = 82;
     const padR = 82;
     const padT = 56;
-    const padB = 48;
+    const padB = 52;
     const plotW = W - padL - padR;
     const plotH = H - padT - padB;
 
@@ -2243,16 +2416,20 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     ctx.font = "bold 14px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
     ctx.textBaseline = "middle";
 
+    // Top Legend (● Subtitles ON, ○ Subtitles OFF, ■ Speed)
     ctx.fillStyle = clarityCol;
+    ctx.strokeStyle = edgeCol;
+    ctx.lineWidth = 2.0;
     ctx.beginPath();
     ctx.arc(padL + 10, 24, 5.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
     ctx.fillText("Subtitles ON", padL + 22, 24);
 
     const leg2X = padL + 175;
     ctx.fillStyle = bgCol;
-    ctx.strokeStyle = clarityCol;
-    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = edgeCol;
+    ctx.lineWidth = 2.0;
     ctx.beginPath();
     ctx.arc(leg2X, 24, 5.5, 0, Math.PI * 2);
     ctx.fill();
@@ -2265,6 +2442,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     ctx.fillRect(leg3X - 5, 24 - 5, 10, 10);
     ctx.fillText("Speed", leg3X + 12, 24);
 
+    // Horizontal Dashed Reference Lines (0%/0x, 50%/1.0x, 100%/2.0x)
     [0, 50, 100].forEach((val) => {
       const y = yClarityToPx(val);
       ctx.save();
@@ -2278,6 +2456,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       ctx.restore();
     });
 
+    // Left, Bottom, and Right Spines
     ctx.strokeStyle = axisCol;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -2287,6 +2466,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     ctx.lineTo(W - padR, padT);
     ctx.stroke();
 
+    // Left Axis Labels (Clarity: 0%, 50%, 100%)
     ctx.fillStyle = clarityCol;
     ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
     ctx.textAlign = "right";
@@ -2301,6 +2481,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     ctx.fillText("Clarity", 0, 0);
     ctx.restore();
 
+    // Right Axis Labels (Speed: 0x, 1.0x, 2.0x)
     ctx.fillStyle = speedCol;
     ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
     ctx.textAlign = "left";
@@ -2315,6 +2496,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     ctx.fillText("Speed", 0, 0);
     ctx.restore();
 
+    // X-Axis Ticks & Sequential Trial # (1, 2, 3, ...)
     ctx.fillStyle = tickLabelCol;
     ctx.font = "bold 12px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
     ctx.textAlign = "center";
@@ -2328,10 +2510,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       ctx.lineTo(x, padT + plotH + 5);
       ctx.stroke();
       if (i % labelStep === 0 || i === rows.length - 1) {
-        ctx.fillText(String(r.StepIdx), x, padT + plotH + 9);
+        ctx.fillText(String(i + 1), x, padT + plotH + 9);
       }
     });
 
+    // Layer 1 (Back): Speed Dashed Neon Cyan Line + Square Markers
     ctx.save();
     ctx.strokeStyle = speedCol;
     ctx.lineWidth = 2.5;
@@ -2353,6 +2536,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       ctx.fillRect(x - 4.5, y - 4.5, 9, 9);
     });
 
+    // Layer 2 (Middle): Clarity Solid Neon Magenta Line
     ctx.strokeStyle = clarityCol;
     ctx.lineWidth = 3.2;
     ctx.beginPath();
@@ -2364,14 +2548,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     });
     ctx.stroke();
 
+    // Layer 3 (Front): Clarity Circles (Filled = Subtitles ON, Hollow = Subtitles OFF, White Edge)
     rows.forEach((r, i) => {
       const x = xIdxToPx(i);
       const y = yClarityToPx(r.VAS_Clarity);
       ctx.beginPath();
       ctx.arc(x, y, 6.2, 0, Math.PI * 2);
       ctx.fillStyle = r.Subtitles ? clarityCol : bgCol;
-      ctx.strokeStyle = clarityCol;
-      ctx.lineWidth = 2.6;
+      ctx.strokeStyle = edgeCol;
+      ctx.lineWidth = 2.0;
       ctx.fill();
       ctx.stroke();
     });
@@ -2547,24 +2732,27 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     )
 
 
-col_url, col_merge = st.columns([5, 1])
-with col_url:
-    url = st.text_input(
-        "YouTube URL",
-        placeholder="YouTube URL を貼り付け...",
-        label_visibility="collapsed",
-    )
-with col_merge:
-    merge_opt = st.checkbox("Merge", value=True, help="断片字幕を文単位に結合")
+default_v = st.query_params.get("v", "") or load_last_video_id()
+default_url = f"https://youtu.be/{default_v}" if default_v else ""
+
+url = st.text_input(
+    "YouTube URL",
+    value=default_url,
+    placeholder="YouTube URL を貼り付け...",
+    label_visibility="collapsed",
+)
 
 if url:
     vid = extract_video_id(url)
     if not vid:
         st.error("有効なYouTube URLではありません。")
     else:
+        if st.query_params.get("v") != vid:
+            st.query_params["v"] = vid
+        save_last_video_id(vid)
         try:
             with st.spinner("字幕取得中..."):
-                captions = fetch_transcript(vid, merge_sentences=merge_opt)
+                captions = fetch_transcript(vid)
             components.html(build_player_html(vid, captions, url.strip()), height=720, scrolling=False)
         except Exception as e:
             st.error(f"字幕を取得できませんでした: {e}")
