@@ -112,8 +112,9 @@ def fetch_transcript(video_id: str, merge_sentences: bool = True, languages: tup
     return merge_into_sentences(items) if merge_sentences else items
 
 
-def build_player_html(video_id: str, captions: list[dict]) -> str:
+def build_player_html(video_id: str, captions: list[dict], source_url: str) -> str:
     captions_json = json.dumps(captions, ensure_ascii=False)
+    source_url_json = json.dumps(source_url, ensure_ascii=False)
     return f"""
 <!DOCTYPE html>
 <html lang="en">
@@ -128,6 +129,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     --accent: #2ba2bd;
     --start-color: #10b981;
     --end-color: #f59e0b;
+    --clarity-color: #f43f5e;
+    --speed-color: #38bdf8;
     --danger: #ef4444;
     --text: #e2e8f0;
     --muted: #64748b;
@@ -152,7 +155,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     overflow: hidden;
   }}
 
-  /* Top Stage Guidance Banner (Directly beneath URL bar) */
+  /* Top Stage Guidance Banner */
   .stage-banner {{
     background: #1e293b;
     border-bottom: 1px solid #334155;
@@ -504,7 +507,6 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     cursor: pointer;
     transition: all 0.12s;
   }}
-  /* Color-coded S (Emerald) and E (Orange) buttons */
   .tag-btn.s-btn {{
     background: rgba(16, 185, 129, 0.16);
     color: #34d399;
@@ -564,6 +566,91 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   .mode-off .blind-notice {{ display: flex; }}
 
   /* =========================================================
+     INLINE VAS CLARITY PROMPT (Appears at end of each step)
+     ========================================================= */
+  .vas-drawer {{
+    display: none;
+    background: #0f172a;
+    border-top: 1px solid #334155;
+    padding: 12px 16px;
+    flex-direction: column;
+    gap: 10px;
+    flex-shrink: 0;
+  }}
+  .vas-drawer.open {{
+    display: flex;
+  }}
+  .vas-top-row {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 700;
+    color: #f8fafc;
+  }}
+  .vas-score-readout {{
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--clarity-color);
+    font-variant-numeric: tabular-nums;
+  }}
+  .vas-slider-wrap {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }}
+  .vas-end-label {{
+    font-size: 11px;
+    color: #94a3b8;
+    white-space: nowrap;
+  }}
+  input[type="range"].vas-slider {{
+    flex: 1;
+    accent-color: var(--clarity-color);
+    height: 6px;
+    cursor: pointer;
+  }}
+  .vas-actions-row {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }}
+  .vas-presets {{
+    display: flex;
+    gap: 5px;
+  }}
+  .vas-preset-btn {{
+    background: #1e293b;
+    color: #cbd5e1;
+    border: 1px solid #334155;
+    border-radius: 5px;
+    padding: 4px 9px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }}
+  .vas-preset-btn:hover {{
+    border-color: var(--clarity-color);
+    color: #fff;
+  }}
+  .vas-submit-btn {{
+    background: var(--clarity-color);
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 18px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }}
+  .vas-submit-btn:hover {{
+    filter: brightness(1.08);
+  }}
+
+  /* =========================================================
      NINJA CONTROLS + 3-STAGE WORLD 1-1 PROGRESSIVE UNLOCK
      ========================================================= */
   .ninja-panel {{
@@ -598,10 +685,16 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: 6px;
     font-size: 12px;
     font-weight: 700;
     color: #e2e8f0;
+    flex-shrink: 0;
+  }}
+  .header-right-group {{
+    display: flex;
+    align-items: center;
+    gap: 5px;
     flex-shrink: 0;
   }}
   .protocol-select {{
@@ -609,11 +702,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     color: #f8fafc;
     border: 1px solid #334155;
     border-radius: 5px;
-    padding: 3px 7px;
-    font-size: 11.5px;
+    padding: 3px 6px;
+    font-size: 11px;
     font-weight: 700;
     cursor: pointer;
-    max-width: 66%;
+    min-width: 0;
+    flex: 1;
     transition: opacity 0.2s, border-color 0.14s;
   }}
   .protocol-select:hover,
@@ -621,12 +715,28 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     border-color: #64748b;
     outline: none;
   }}
+  .log-pill-btn {{
+    background: var(--card);
+    color: #e2e8f0;
+    border: 1px solid #475569;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 10.5px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }}
+  .log-pill-btn:hover {{
+    border-color: #94a3b8;
+    color: #fff;
+  }}
   .status-badge {{
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 600;
     color: #e2e8f0;
     background: rgba(148, 163, 184, 0.14);
-    padding: 2px 8px;
+    padding: 2px 7px;
     border-radius: 999px;
     white-space: nowrap;
   }}
@@ -742,8 +852,18 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     letter-spacing: 0.04em;
     display: flex;
     justify-content: space-between;
+    align-items: center;
     flex-shrink: 0;
     transition: opacity 0.2s;
+  }}
+  .vas-mode-toggle {{
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #cbd5e1;
+    cursor: pointer;
+    font-size: 10.5px;
+    font-weight: 600;
   }}
   .steps-list {{
     flex: 1;
@@ -756,13 +876,14 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   }}
   .step-item {{
     display: grid;
-    grid-template-columns: 26px 50px 60px 1fr;
+    grid-template-columns: 26px 46px 56px 1fr auto;
     align-items: center;
     padding: 5px 8px;
     border-bottom: 1px solid #1e293b;
     font-size: 12px;
     cursor: pointer;
     font-variant-numeric: tabular-nums;
+    gap: 4px;
   }}
   .step-item:last-child {{ border-bottom: none; }}
   .step-item.current-step {{
@@ -774,6 +895,14 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   .step-speed {{ color: #f8fafc; font-weight: 600; }}
   .step-cc-on {{ color: #38bdf8; font-weight: 600; }}
   .step-cc-off {{ color: #64748b; }}
+  .step-vas-pill {{
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #fb7185;
+    background: rgba(244, 63, 94, 0.14);
+    padding: 1px 6px;
+    border-radius: 999px;
+  }}
 
   /* Instant Floating Tooltip */
   .fast-tooltip {{
@@ -801,11 +930,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     .app-shell {{
       display: grid;
       grid-template-columns: minmax(340px, 46%) 1fr;
-      grid-template-rows: auto auto 1fr;
+      grid-template-rows: auto auto 1fr auto;
       grid-template-areas:
         "banner banner"
         "video transcript"
-        "ninja transcript";
+        "ninja transcript"
+        "ninja vas";
       height: 100vh;
     }}
     .stage-banner {{
@@ -830,14 +960,17 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       height: 100%;
       padding: 6px 10px;
     }}
+    .vas-drawer {{
+      grid-area: vas;
+    }}
   }}
 
-  /* Protocol Modal */
+  /* Modals (Protocol Config + Dark-Theme Plot & CSV Export) */
   .modal-backdrop {{
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.75);
+    background: rgba(0, 0, 0, 0.78);
     z-index: 50;
     align-items: center;
     justify-content: center;
@@ -855,14 +988,19 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     flex-direction: column;
     overflow: hidden;
   }}
+  .modal-box.plot-modal-box {{
+    max-width: 780px;
+    background: #0f172a;
+  }}
   .modal-head {{
-    padding: 10px 12px;
+    padding: 10px 14px;
     font-weight: 700;
     font-size: 14px;
     border-bottom: 1px solid #334155;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    background: #1e293b;
   }}
   .modal-name-bar {{
     padding: 8px 12px;
@@ -888,6 +1026,21 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     overflow-y: auto;
     flex: 1;
   }}
+  .plot-canvas-wrap {{
+    padding: 12px;
+    background: #0b1120;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }}
+  #vas-plot-canvas {{
+    width: 100%;
+    height: auto;
+    max-height: 360px;
+    border-radius: 6px;
+    background: #0b1120;
+  }}
   .edit-row {{
     display: grid;
     grid-template-columns: 24px 70px 60px 1fr;
@@ -905,12 +1058,26 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     padding: 4px;
   }}
   .modal-foot {{
-    padding: 8px 12px;
+    padding: 8px 14px;
     border-top: 1px solid #334155;
     display: flex;
-    gap: 6px;
+    gap: 8px;
     justify-content: space-between;
     align-items: center;
+    background: #1e293b;
+  }}
+  .export-btn {{
+    background: #10b981;
+    color: #020617;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+  }}
+  .export-btn:hover {{
+    background: #34d399;
   }}
 </style>
 </head>
@@ -943,11 +1110,37 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     <div class="caption-list" id="caption-list"></div>
   </div>
 
+  <!-- Inline VAS Clarity Prompt (Appears at end of each step when VAS mode is enabled) -->
+  <div class="vas-drawer" id="vas-drawer">
+    <div class="vas-top-row">
+      <span id="vas-step-prompt">Step 1/19 (1.0x CC OFF) — Speech Clarity</span>
+      <span class="vas-score-readout" id="vas-score-readout">50%</span>
+    </div>
+    <div class="vas-slider-wrap">
+      <span class="vas-end-label">0% Unclear</span>
+      <input type="range" min="0" max="100" value="50" class="vas-slider" id="vas-slider" oninput="onVasSliderInput(this.value)" />
+      <span class="vas-end-label">100% Crystal Clear</span>
+    </div>
+    <div class="vas-actions-row">
+      <div class="vas-presets">
+        <button class="vas-preset-btn" onclick="setVasVal(0)">0</button>
+        <button class="vas-preset-btn" onclick="setVasVal(25)">25</button>
+        <button class="vas-preset-btn" onclick="setVasVal(50)">50</button>
+        <button class="vas-preset-btn" onclick="setVasVal(75)">75</button>
+        <button class="vas-preset-btn" onclick="setVasVal(100)">100</button>
+      </div>
+      <button class="vas-submit-btn" onclick="submitVasAndContinue()">Record &amp; Next →</button>
+    </div>
+  </div>
+
   <!-- 3. Ninja Controls (3-Stage Progressive Unlock) -->
   <div class="ninja-panel locked-unsynced" id="ninja-panel">
     <div class="ninja-header">
       <select class="protocol-select" id="protocol-select" data-tip="Switch training protocol" onchange="onProtocolChange(this.value)"></select>
-      <span class="status-badge" id="status-badge">Step 1: Sync</span>
+      <div class="header-right-group">
+        <button class="log-pill-btn" id="log-pill-btn" data-tip="View dark-theme VAS plot &amp; export CSV" onclick="openPlotModal()">📊 0</button>
+        <span class="status-badge" id="status-badge">Step 1: Sync</span>
+      </div>
     </div>
 
     <div class="range-row">
@@ -970,9 +1163,44 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
     <div class="steps-header">
       <span>STEPS (TAP TO JUMP IN)</span>
-      <span id="step-counter">19 steps</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <label class="vas-mode-toggle" data-tip="Ask VAS Clarity rating after each step">
+          <input type="checkbox" id="vas-enabled-chk" checked onchange="toggleVasEnabled(this.checked)" />
+          <span>VAS</span>
+        </label>
+        <span id="step-counter">19 steps</span>
+      </div>
     </div>
     <div class="steps-list" id="steps-list"></div>
+  </div>
+</div>
+
+<!-- Dark-Theme VAS Plot & CSV Export Modal -->
+<div class="modal-backdrop" id="plot-modal">
+  <div class="modal-box plot-modal-box">
+    <div class="modal-head">
+      <span id="plot-modal-title">VAS Clarity &amp; Speed Log</span>
+      <button class="nudge-btn" onclick="closePlotModal()">✕</button>
+    </div>
+    <div class="plot-canvas-wrap">
+      <canvas id="vas-plot-canvas" width="840" height="440"></canvas>
+      <div id="plot-empty-msg" style="color:#94a3b8;font-size:13px;padding:24px 0;display:none;">
+        No VAS trials recorded yet. Run a sequence with VAS checked to plot your clarity curve.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:11.5px;color:#94a3b8;">SubjectID:</span>
+        <input type="text" id="subject-id-input" value="SUBJ_001"
+               style="width:92px;background:#0f172a;color:#fff;border:1px solid #475569;border-radius:4px;padding:4px 6px;font-size:11.5px;"
+               onchange="saveSubjectId(this.value)" />
+        <button class="nudge-btn" style="color:#f87171;border-color:rgba(239,68,68,0.45);" onclick="clearTrialLogs()">Clear Log</button>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="nudge-btn" onclick="downloadPlotPng()">⬇ PNG</button>
+        <button class="export-btn" onclick="exportLogsCsv()">⬇ Export CSV</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1049,10 +1277,13 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   const captions = {captions_json};
   const videoId = "{video_id}";
+  const sourceUrl = {source_url_json};
   const DEFAULT_SPAN = 30.0;
   const SYNC_CACHE_KEY = "ninja_sync_cache_v1";
   const CUSTOM_PROTOCOLS_KEY = "ninja_custom_protocols_v1";
   const SELECTED_PROTOCOL_KEY = "ninja_selected_protocol_v1";
+  const TRIAL_LOG_KEY = "ninja_trial_logs_v1";
+  const SUBJECT_ID_KEY = "ninja_subject_id_v1";
   const MAX_CACHE_ENTRIES = 100;
 
   function buildShadowingSteps() {{
@@ -1072,6 +1303,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   const BUILTIN_PROTOCOLS = {{
     "anchor_06": {{
       name: "Ninja Protocol (0.6x Anchor)",
+      shortKey: "ninja",
       steps: [
         {{ speed: 1.0, cc: false }},
         {{ speed: 1.0, cc: true }},
@@ -1096,6 +1328,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     }},
     "express": {{
       name: "Ninja Protocol (Express)",
+      shortKey: "express",
       steps: [
         {{ speed: 1.0, cc: false }},
         {{ speed: 0.6, cc: true }},
@@ -1111,6 +1344,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     }},
     "shadowing": {{
       name: "Ninja Shadowing Protocol",
+      shortKey: "shadowing",
       steps: buildShadowingSteps()
     }}
   }};
@@ -1144,7 +1378,17 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   let steps = getProtocolById(selectedProtocolId).steps.map(s => ({{ ...s }}));
   let trainingView = localStorage.getItem("ninja_training_view") || "spotlight";
+  let vasEnabled = localStorage.getItem("ninja_vas_enabled") !== "false";
+  let subjectId = localStorage.getItem(SUBJECT_ID_KEY) || "SUBJ_001";
+  let trialLogs = [];
+  try {{
+    trialLogs = JSON.parse(localStorage.getItem(TRIAL_LOG_KEY) || "[]");
+  }} catch (e) {{
+    trialLogs = [];
+  }}
+
   let player = null;
+  let videoTitle = videoId;
   let activeCaptionIdx = -1;
   let previewCaptionIdx = -1;
 
@@ -1159,6 +1403,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   let lastSavedPlaybackSec = -1;
 
   let isRunning = false;
+  let awaitingVas = false;
   let currentStepIdx = -1;
   let stepTransitionLock = false;
 
@@ -1177,6 +1422,99 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   const statusBadge = document.getElementById("status-badge");
   const stepsListEl = document.getElementById("steps-list");
   const blindStepLabel = document.getElementById("blind-step-label");
+  const vasDrawerEl = document.getElementById("vas-drawer");
+  const vasSliderEl = document.getElementById("vas-slider");
+  const vasScoreReadoutEl = document.getElementById("vas-score-readout");
+  const logPillBtnEl = document.getElementById("log-pill-btn");
+
+  document.getElementById("vas-enabled-chk").checked = vasEnabled;
+  document.getElementById("subject-id-input").value = subjectId;
+
+  function saveTrialLogs() {{
+    try {{
+      localStorage.setItem(TRIAL_LOG_KEY, JSON.stringify(trialLogs));
+    }} catch (e) {{}}
+    updateLogPill();
+  }}
+
+  function updateLogPill() {{
+    const videoTrials = trialLogs.filter(r => r.VideoID === videoId);
+    logPillBtnEl.textContent = `📊 ${{videoTrials.length}}`;
+  }}
+
+  function saveSubjectId(val) {{
+    subjectId = (val || "").trim() || "SUBJ_001";
+    localStorage.setItem(SUBJECT_ID_KEY, subjectId);
+  }}
+
+  function toggleVasEnabled(checked) {{
+    vasEnabled = checked;
+    localStorage.setItem("ninja_vas_enabled", String(checked));
+    if (!checked && awaitingVas) {{
+      awaitingVas = false;
+      vasDrawerEl.classList.remove("open");
+      applyStep(currentStepIdx + 1);
+    }}
+  }}
+
+  function onVasSliderInput(val) {{
+    vasScoreReadoutEl.textContent = `${{val}}%`;
+  }}
+
+  function setVasVal(val) {{
+    vasSliderEl.value = val;
+    vasScoreReadoutEl.textContent = `${{val}}%`;
+  }}
+
+  function promptVasForCurrentStep() {{
+    awaitingVas = true;
+    if (player && typeof player.pauseVideo === "function") {{
+      player.pauseVideo();
+    }}
+    const step = steps[currentStepIdx];
+    document.getElementById("vas-step-prompt").textContent =
+      `Step ${{currentStepIdx + 1}}/${{steps.length}} (${{step.speed.toFixed(1)}}x ${{step.cc ? 'CC ON' : 'CC OFF'}}) — Clarity`;
+    // Keep previous VAS score as starting anchor (matches natural sequential rating)
+    vasScoreReadoutEl.textContent = `${{vasSliderEl.value}}%`;
+    vasDrawerEl.classList.add("open");
+    statusBadge.textContent = `Rate Step ${{currentStepIdx + 1}}/${{steps.length}}`;
+  }}
+
+  function submitVasAndContinue() {{
+    if (!awaitingVas || currentStepIdx < 0) return;
+    const step = steps[currentStepIdx];
+    const score = parseInt(vasSliderEl.value, 10) || 0;
+    const proto = getProtocolById(selectedProtocolId);
+
+    trialLogs.push({{
+      SubjectID: subjectId,
+      Timestamp: new Date().toISOString(),
+      VideoID: videoId,
+      StartTime: Number(rangeStart.toFixed(2)),
+      EndTime: Number(rangeEnd.toFixed(2)),
+      StepIdx: currentStepIdx + 1,
+      PlaybackRate: Number(step.speed.toFixed(1)),
+      Subtitles: Boolean(step.cc),
+      VAS_Clarity: score,
+      URL: sourceUrl || `https://www.youtube.com/watch?v=${{videoId}}`,
+      Title: videoTitle || videoId,
+      Protocol: proto.shortKey || proto.name
+    }});
+    saveTrialLogs();
+
+    awaitingVas = false;
+    vasDrawerEl.classList.remove("open");
+    renderStepsList();
+    applyStep(currentStepIdx + 1);
+  }}
+
+  // Keyboard shortcut: Enter submits VAS when prompt is open
+  document.addEventListener("keydown", (e) => {{
+    if (awaitingVas && e.key === "Enter") {{
+      e.preventDefault();
+      submitVasAndContinue();
+    }}
+  }});
 
   function renderProtocolDropdown() {{
     protocolSelectEl.innerHTML = "";
@@ -1449,6 +1787,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     saveVideoSyncState(rangeStart);
     updatePanelLockState();
     updateRangeUI();
+    renderStepsList();
   }}
 
   function setEndBoundary(newEnd) {{
@@ -1461,6 +1800,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     saveVideoSyncState(rangeStart);
     updatePanelLockState();
     updateRangeUI();
+    renderStepsList();
   }}
 
   function updateRangeUI() {{
@@ -1602,6 +1942,17 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     highlightRangeCaptions();
   }}
 
+  function getLatestVasForStep(stepNum) {{
+    for (let i = trialLogs.length - 1; i >= 0; i--) {{
+      const r = trialLogs[i];
+      if (r.VideoID === videoId && r.StepIdx === stepNum &&
+          Math.abs(r.StartTime - Number(rangeStart.toFixed(2))) < 0.2) {{
+        return r.VAS_Clarity;
+      }}
+    }}
+    return null;
+  }}
+
   function renderStepsList() {{
     stepsListEl.innerHTML = "";
     document.getElementById("step-counter").textContent = `${{steps.length}} steps`;
@@ -1609,11 +1960,14 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       const row = document.createElement("div");
       row.className = "step-item" + (isRunning && idx === currentStepIdx ? " current-step" : "");
       row.id = "step-row-" + idx;
+      const loggedVas = hasUserRange ? getLatestVasForStep(idx + 1) : null;
+      const vasBadge = loggedVas !== null ? `<span class="step-vas-pill">${{loggedVas}}%</span>` : `<span></span>`;
       row.innerHTML = `
         <span class="step-num">${{idx + 1}}</span>
         <span class="step-speed">${{stItem.speed.toFixed(1)}}x</span>
         <span class="${{stItem.cc ? 'step-cc-on' : 'step-cc-off'}}">${{stItem.cc ? 'CC on' : 'CC off'}}</span>
         <span style="font-size:11px;color:#64748b;text-align:right;">Tap to jump</span>
+        ${{vasBadge}}
       `;
       row.onclick = () => {{ runSequence(idx); }};
       stepsListEl.appendChild(row);
@@ -1654,6 +2008,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
     saveVideoSyncState(rangeStart);
     updatePanelLockState();
     updateRangeUI();
+    renderStepsList();
     if (player && player.seekTo) {{
       player.seekTo(rangeStart, true);
       player.playVideo();
@@ -1662,6 +2017,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   function runSequence(startIdx = 0) {{
     if (!player || steps.length === 0 || !isSynced || !hasUserRange) return;
+    awaitingVas = false;
+    vasDrawerEl.classList.remove("open");
     isRunning = true;
     areaEl.classList.add("training-active");
     updatePanelLockState();
@@ -1671,6 +2028,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   function applyStep(idx) {{
     if (idx >= steps.length) {{
       isRunning = false;
+      awaitingVas = false;
+      vasDrawerEl.classList.remove("open");
       currentStepIdx = -1;
       areaEl.classList.remove("training-active");
       player.pauseVideo();
@@ -1703,6 +2062,8 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
   function stopSequence() {{
     isRunning = false;
+    awaitingVas = false;
+    vasDrawerEl.classList.remove("open");
     currentStepIdx = -1;
     areaEl.classList.remove("training-active");
     if (player && typeof player.pauseVideo === "function") {{
@@ -1724,6 +2085,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
   renderCaptions();
   renderStepsList();
   updateRangeUI();
+  updateLogPill();
 
   areaEl.addEventListener("touchstart", () => {{
     userScrolling = true;
@@ -1750,6 +2112,11 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       events: {{
         onReady: () => {{
           fitParentIframe();
+          try {{
+            const data = player.getVideoData();
+            if (data && data.title) videoTitle = data.title;
+          }} catch (e) {{}}
+
           if (hadCachedSync && cachedResumeTime !== null && cachedResumeTime > 0) {{
             player.seekTo(cachedResumeTime, true);
             player.pauseVideo();
@@ -1760,6 +2127,12 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
             updatePlaybackHighlight(0, false);
           }}
           setInterval(mainLoop, 100);
+        }},
+        onStateChange: () => {{
+          try {{
+            const data = player.getVideoData();
+            if (data && data.title) videoTitle = data.title;
+          }} catch (e) {{}}
         }}
       }}
     }});
@@ -1830,14 +2203,279 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
       }}
     }}
 
-    if (isRunning && !stepTransitionLock && player.getPlayerState() === YT.PlayerState.PLAYING) {{
+    if (isRunning && !awaitingVas && !stepTransitionLock && player.getPlayerState() === YT.PlayerState.PLAYING) {{
       if (t >= rangeEnd) {{
-        applyStep(currentStepIdx + 1);
+        if (vasEnabled) {{
+          promptVasForCurrentStep();
+        }} else {{
+          applyStep(currentStepIdx + 1);
+        }}
         return;
       }}
     }}
 
     updatePlaybackHighlight(t, false);
+  }}
+
+  /* =========================================================
+     DARK-THEME DUAL-AXIS VAS PLOT (Matching plot_csv.py) & CSV
+     ========================================================= */
+  function openPlotModal() {{
+    document.getElementById("plot-modal").classList.add("open");
+    renderDarkVasPlot();
+  }}
+
+  function closePlotModal() {{
+    document.getElementById("plot-modal").classList.remove("open");
+  }}
+
+  function clearTrialLogs() {{
+    trialLogs = trialLogs.filter(r => r.VideoID !== videoId);
+    saveTrialLogs();
+    renderStepsList();
+    renderDarkVasPlot();
+  }}
+
+  function renderDarkVasPlot() {{
+    const canvas = document.getElementById("vas-plot-canvas");
+    const emptyMsg = document.getElementById("plot-empty-msg");
+    const titleEl = document.getElementById("plot-modal-title");
+    const rows = trialLogs.filter(r => r.VideoID === videoId);
+
+    titleEl.textContent = `VAS Clarity & Speed — ${{videoTitle}} (${{rows.length}} trials)`;
+
+    if (rows.length === 0) {{
+      canvas.style.display = "none";
+      emptyMsg.style.display = "block";
+      return;
+    }}
+    canvas.style.display = "block";
+    emptyMsg.style.display = "none";
+
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width;
+    const H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // Dark Ninja Canvas Background
+    const bgCol = "#0b1120";
+    const clarityCol = "#f43f5e";  // Vivid rose-pink (Clarity)
+    const speedCol = "#38bdf8";    // Cyan-blue (Speed)
+    const axisCol = "#475569";
+    const gridCol = "#1e293b";
+    const gridMidCol = "#334155";
+    const tickLabelCol = "#94a3b8";
+
+    ctx.fillStyle = bgCol;
+    ctx.fillRect(0, 0, W, H);
+
+    const padL = 82;
+    const padR = 82;
+    const padT = 56;
+    const padB = 48;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    // Synchronized axis scales matching plot_csv.py:
+    // Clarity: -5 to 105  <-->  Speed: -0.1 to 2.1
+    const yClarityToPx = (c) => padT + plotH * (1 - (c - (-5)) / (105 - (-5)));
+    const ySpeedToPx = (s) => padT + plotH * (1 - (s - (-0.1)) / (2.1 - (-0.1)));
+    const xIdxToPx = (i) => rows.length === 1 ? (padL + plotW / 2) : (padL + (plotW * i) / (rows.length - 1));
+
+    // Top Legend (● Subtitles ON, ○ Subtitles OFF, ■ Speed)
+    ctx.font = "bold 14px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
+    ctx.textBaseline = "middle";
+
+    // Legend 1: Filled circle Subtitles ON
+    ctx.fillStyle = clarityCol;
+    ctx.beginPath();
+    ctx.arc(padL + 10, 24, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillText("Subtitles ON", padL + 22, 24);
+
+    // Legend 2: Hollow circle Subtitles OFF
+    const leg2X = padL + 175;
+    ctx.fillStyle = bgCol;
+    ctx.strokeStyle = clarityCol;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(leg2X, 24, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = clarityCol;
+    ctx.fillText("Subtitles OFF", leg2X + 12, 24);
+
+    // Legend 3: Square Speed
+    const leg3X = W - padR - 95;
+    ctx.fillStyle = speedCol;
+    ctx.fillRect(leg3X - 5, 24 - 5, 10, 10);
+    ctx.fillText("Speed", leg3X + 12, 24);
+
+    // Horizontal Dashed Reference Lines (0%/0x, 50%/1.0x, 100%/2.0x)
+    [0, 50, 100].forEach((val) => {{
+      const y = yClarityToPx(val);
+      ctx.save();
+      ctx.strokeStyle = val === 50 ? gridMidCol : gridCol;
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(W - padR, y);
+      ctx.stroke();
+      ctx.restore();
+    }});
+
+    // Left, Bottom, and Right Spines (Top spine hidden)
+    ctx.strokeStyle = axisCol;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(padL, padT);
+    ctx.lineTo(padL, padT + plotH);
+    ctx.lineTo(W - padR, padT + plotH);
+    ctx.lineTo(W - padR, padT);
+    ctx.stroke();
+
+    // Left Axis Labels (Clarity: 0%, 50%, 100%)
+    ctx.fillStyle = clarityCol;
+    ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
+    ctx.textAlign = "right";
+    [0, 50, 100].forEach((val) => {{
+      ctx.fillText(`${{val}}%`, padL - 10, yClarityToPx(val));
+    }});
+    ctx.save();
+    ctx.translate(22, padT + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = "center";
+    ctx.font = "bold 15px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
+    ctx.fillText("Clarity", 0, 0);
+    ctx.restore();
+
+    // Right Axis Labels (Speed: 0x, 1.0x, 2.0x)
+    ctx.fillStyle = speedCol;
+    ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
+    ctx.textAlign = "left";
+    [[0.0, "0x"], [1.0, "1.0x"], [2.0, "2.0x"]].forEach(([val, lbl]) => {{
+      ctx.fillText(lbl, W - padR + 10, ySpeedToPx(val));
+    }});
+    ctx.save();
+    ctx.translate(W - 22, padT + plotH / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.textAlign = "center";
+    ctx.font = "bold 15px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
+    ctx.fillText("Speed", 0, 0);
+    ctx.restore();
+
+    // X-Axis Ticks & StepIdx Labels
+    ctx.fillStyle = tickLabelCol;
+    ctx.font = "bold 12px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const labelStep = rows.length > 22 ? Math.ceil(rows.length / 18) : 1;
+    rows.forEach((r, i) => {{
+      const x = xIdxToPx(i);
+      ctx.strokeStyle = axisCol;
+      ctx.beginPath();
+      ctx.moveTo(x, padT + plotH);
+      ctx.lineTo(x, padT + plotH + 5);
+      ctx.stroke();
+      if (i % labelStep === 0 || i === rows.length - 1) {{
+        ctx.fillText(String(r.StepIdx), x, padT + plotH + 9);
+      }}
+    }});
+
+    // Layer 1 (Back): Speed Dashed Cyan Line + Square Markers
+    ctx.save();
+    ctx.strokeStyle = speedCol;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([7, 5]);
+    ctx.beginPath();
+    rows.forEach((r, i) => {{
+      const x = xIdxToPx(i);
+      const y = ySpeedToPx(r.PlaybackRate);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }});
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = speedCol;
+    rows.forEach((r, i) => {{
+      const x = xIdxToPx(i);
+      const y = ySpeedToPx(r.PlaybackRate);
+      ctx.fillRect(x - 4.5, y - 4.5, 9, 9);
+    }});
+
+    // Layer 2 (Middle): Clarity Solid Rose-Pink Line
+    ctx.strokeStyle = clarityCol;
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    rows.forEach((r, i) => {{
+      const x = xIdxToPx(i);
+      const y = yClarityToPx(r.VAS_Clarity);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }});
+    ctx.stroke();
+
+    // Layer 3 (Front): Clarity Circles (Filled = Subtitles ON, Hollow = Subtitles OFF)
+    rows.forEach((r, i) => {{
+      const x = xIdxToPx(i);
+      const y = yClarityToPx(r.VAS_Clarity);
+      ctx.beginPath();
+      ctx.arc(x, y, 6.2, 0, Math.PI * 2);
+      ctx.fillStyle = r.Subtitles ? clarityCol : bgCol;
+      ctx.strokeStyle = clarityCol;
+      ctx.lineWidth = 2.6;
+      ctx.fill();
+      ctx.stroke();
+    }});
+  }}
+
+  function downloadPlotPng() {{
+    const canvas = document.getElementById("vas-plot-canvas");
+    if (!canvas || canvas.style.display === "none") return;
+    const safeTitle = (videoTitle || videoId).replace(/[^a-zA-Z0-9 _-]/g, "_").slice(0, 36).trim();
+    const link = document.createElement("a");
+    link.download = `ninja_${{safeTitle}}_${{Date.now()}}_plot.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  }}
+
+  function csvEscape(val) {{
+    const str = String(val ?? "");
+    if (/[",\n]/.test(str)) {{
+      return `"${{str.replace(/"/g, '""')}}"`;
+    }}
+    return str;
+  }}
+
+  function exportLogsCsv() {{
+    const rows = trialLogs.filter(r => r.VideoID === videoId);
+    if (rows.length === 0) return;
+
+    const headers = [
+      "SubjectID", "Timestamp", "VideoID", "StartTime", "EndTime",
+      "StepIdx", "PlaybackRate", "Subtitles", "VAS_Clarity",
+      "URL", "Title", "Protocol"
+    ];
+    const lines = [headers.join(",")];
+    rows.forEach((r) => {{
+      const vals = headers.map((h) => {{
+        if (h === "Subtitles") return r.Subtitles ? "True" : "False";
+        if (h === "PlaybackRate") return Number(r.PlaybackRate).toFixed(1);
+        return csvEscape(r[h]);
+      }});
+      lines.push(vals.join(","));
+    }});
+
+    const blob = new Blob([lines.join("\n")], {{ type: "text/csv;charset=utf-8;" }});
+    const safeTitle = (videoTitle || videoId).replace(/[^a-zA-Z0-9 _-]/g, "_").slice(0, 36).trim();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ninja_${{safeTitle}}_${{Date.now()}}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }}
 
   /* Protocol Customization & Named Sequence Modal */
@@ -1921,6 +2559,7 @@ def build_player_html(video_id: str, captions: list[dict]) -> str:
 
     customProtocols[targetId] = {{
       name: seqName,
+      shortKey: seqName.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
       steps: draftSteps.map(s => ({{ ...s }}))
     }};
     saveCustomProtocols(customProtocols);
@@ -1969,6 +2608,6 @@ if url:
         try:
             with st.spinner("字幕取得中..."):
                 captions = fetch_transcript(vid, merge_sentences=merge_opt)
-            components.html(build_player_html(vid, captions), height=720, scrolling=False)
+            components.html(build_player_html(vid, captions, url.strip()), height=720, scrolling=False)
         except Exception as e:
             st.error(f"字幕を取得できませんでした: {e}")
