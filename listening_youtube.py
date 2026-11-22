@@ -1221,7 +1221,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </div>
 
     <div class="run-row">
-      <button class="run-btn" onclick="runSequence(0)">▶ Run sequence</button>
+      <button class="run-btn" onclick="runSequence(0)">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M12 1 L14.8 9.2 L23 12 L14.8 14.8 L12 23 L9.2 14.8 L1 12 L9.2 9.2 Z M12 9.7 A2.3 2.3 0 1 0 12 14.3 A2.3 2.3 0 1 0 12 9.7 Z"/>
+        </svg>
+        <span>Run sequence</span>
+      </button>
       <button class="stop-btn" onclick="stopSequence()">■ Stop</button>
       <button class="cfg-btn" data-tip="Customize or save named sequence" onclick="openModal()">⚙</button>
     </div>
