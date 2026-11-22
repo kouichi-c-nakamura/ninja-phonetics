@@ -860,8 +860,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     transition: opacity 0.2s, background 0.14s;
   }
   .run-btn svg {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     fill: #ffffff;
     flex-shrink: 0;
     transition: transform 0.28s ease;
@@ -1156,6 +1156,21 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .export-btn:hover {
     filter: brightness(1.1);
   }
+  @keyframes shuriken-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  .step-shuriken {
+    width: 18px;
+    height: 18px;
+    fill: #38bdf8;
+    justify-self: end;
+    display: block;
+    animation: shuriken-spin var(--spin-dur, 1.2s) linear infinite;
+  }
+  .step-shuriken.paused {
+    animation-play-state: paused;
+  }
 </style>
 </head>
 <body>
@@ -1223,7 +1238,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="run-row">
       <button class="run-btn" onclick="runSequence(0)">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M12 1 L14.8 9.2 L23 12 L14.8 14.8 L12 23 L9.2 14.8 L1 12 L9.2 9.2 Z M12 9.7 A2.3 2.3 0 1 0 12 14.3 A2.3 2.3 0 1 0 12 9.7 Z"/>
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M12 0.5 L15.6 8.4 L23.5 12 L15.6 15.6 L12 23.5 L8.4 15.6 L0.5 12 L8.4 8.4 Z M12 8.8 A3.2 3.2 0 1 0 12 15.2 A3.2 3.2 0 1 0 12 8.8 Z"/>
         </svg>
         <span>Run sequence</span>
       </button>
@@ -1613,6 +1628,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     vasScoreReadoutEl.textContent = `${vasSliderEl.value}%`;
     vasDrawerEl.classList.add("open");
     statusBadge.textContent = `Rate Step ${currentStepIdx + 1}/${steps.length}`;
+    renderStepsList();
   }
 
   function submitVasAndContinue() {
@@ -2102,16 +2118,26 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     stepsListEl.innerHTML = "";
     document.getElementById("step-counter").textContent = `${steps.length} steps`;
     steps.forEach((stItem, idx) => {
+      const isCurrent = isRunning && idx === currentStepIdx;
       const row = document.createElement("div");
-      row.className = "step-item" + (isRunning && idx === currentStepIdx ? " current-step" : "");
+      row.className = "step-item" + (isCurrent ? " current-step" : "");
       row.id = "step-row-" + idx;
+
       const loggedVas = hasUserRange ? getLatestVasForStep(idx + 1) : null;
       const vasBadge = loggedVas !== null ? `<span class="step-vas-pill">${loggedVas}%</span>` : `<span></span>`;
+
+      const spinDur = (1.2 / stItem.speed).toFixed(2) + "s";
+      const rightAction = isCurrent
+        ? `<svg class="step-shuriken${awaitingVas ? ' paused' : ''}" style="--spin-dur:${spinDur};" viewBox="0 0 24 24" aria-hidden="true">
+             <path fill-rule="evenodd" clip-rule="evenodd" d="M12 1 L14.8 9.2 L23 12 L14.8 14.8 L12 23 L9.2 14.8 L1 12 L9.2 9.2 Z M12 9.7 A2.3 2.3 0 1 0 12 14.3 A2.3 2.3 0 1 0 12 9.7 Z"/>
+           </svg>`
+        : `<span style="font-size:11px;color:#64748b;text-align:right;">Tap to jump</span>`;
+
       row.innerHTML = `
         <span class="step-num">${idx + 1}</span>
         <span class="step-speed">${stItem.speed.toFixed(1)}x</span>
         <span class="${stItem.cc ? 'step-cc-on' : 'step-cc-off'}">${stItem.cc ? 'CC on' : 'CC off'}</span>
-        <span style="font-size:11px;color:#64748b;text-align:right;">Tap to jump</span>
+        ${rightAction}
         ${vasBadge}
       `;
       row.onclick = () => { runSequence(idx); };
