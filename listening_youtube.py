@@ -845,6 +845,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     flex-shrink: 0;
   }
   .run-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     background: var(--primary-blue);
     color: #fff;
     border: none;
@@ -853,7 +857,17 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     font-size: 12.5px;
     font-weight: 700;
     cursor: pointer;
-    transition: opacity 0.2s;
+    transition: opacity 0.2s, background 0.14s;
+  }
+  .run-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: #ffffff;
+    flex-shrink: 0;
+    transition: transform 0.28s ease;
+  }
+  .run-btn:hover svg {
+    transform: rotate(90deg);
   }
   .stop-btn {
     background: var(--danger);
