@@ -8,7 +8,7 @@
 
 ブラウザ（PC・スマートフォン対応）から直接利用できます。
 
-👉 **https://ninja-phonics-2026.streamlit.app/**
+👉 **https://ninja-phonetics.streamlit.app/**
 
 ## 💡 コンセプトと開発思想：確率論的AIジャッジから「決定論的ストライクゾーン」へ
 
@@ -74,7 +74,7 @@ ninja-phonics/
 ## 🚀 ローカルでのセットアップ・実行方法
 
 ```
-git clone https://github.com/<your-username>/ninja-phonics.git
+git clone https://github.com/kouichi-c-nakamura/ninja-phonetics.git
 cd ninja-phonics
 
 # 仮想環境の作成と有効化
