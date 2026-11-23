@@ -35,10 +35,11 @@ VALID_MODES = {"RL", "SIBILANT", "RHYTHM", "LISTENING"}
 
 if "app_mode" not in st.session_state:
     qp_mode = st.query_params.get("mode", "")
-    st.session_state.app_mode = qp_mode if qp_mode in VALID_MODES else "SELECT_MOBILE"
+    st.session_state.app_mode = qp_mode if qp_mode in VALID_MODES else "RL"
 
-if "mobile_menu_open" not in st.session_state:
-    st.session_state.mobile_menu_open = (st.session_state.app_mode == "SELECT_MOBILE")
+if "nav_selected" not in st.session_state:
+    # URLに ?mode=... が付いていれば選択済み、なければ初期状態（未選択）
+    st.session_state.nav_selected = (st.query_params.get("mode", "") in VALID_MODES)
 
 # セッション状態初期化
 if "current_label" not in st.session_state: st.session_state.current_label = "お手本: Right (US)"
@@ -75,88 +76,64 @@ if "e2_audio_bytes" not in st.session_state: st.session_state.e2_audio_bytes = N
 if "e2_eval_history" not in st.session_state: st.session_state.e2_eval_history = []
 if "e2_plot_view" not in st.session_state: st.session_state.e2_plot_view = "scatter2d"
 
-st.markdown(
-    """
-    <style>
-    header[data-testid="stHeader"] { display: none; }
-    .block-container {
-        padding-top: 0.45rem !important;
-        padding-bottom: 0.2rem !important;
-    }
-    /* スマホ (<=639px): PC用ブランドバーと4列ナビを隠す */
+# スマホ選択済み状態のときだけ、639px以下で上部ブランドヘッダーと4タブを非表示にする
+hide_mobile_nav_css = """
     @media (max-width: 639px) {
         .brand-bar { display: none !important; }
-        div[data-testid="stHorizontalBlock"]:has(button[key*="pc_tab_"]),
-        div[data-testid="stHorizontalBlock"]:first-of-type {
+        div:has(#top-nav-anchor) + div {
             display: none !important;
         }
     }
-    /* PC (>=640px): スマホ専用3択メニューを隠す */
-    @media (min-width: 640px) {
-        div[data-testid="stVerticalBlock"] > div[data-testid="element-container"]:has(.mobile-brand-hdr),
-        div[data-testid="stVerticalBlock"] > div[data-testid="element-container"]:has(button[kind="tertiary"]) {
-            display: none !important;
-        }
-    }
+""" if st.session_state.nav_selected else ""
+
+st.markdown(
+    f"""
+    <style>
+    header[data-testid="stHeader"] {{ display: none; }}
+    .block-container {{
+        padding-top: 0.45rem !important;
+        padding-bottom: 0.2rem !important;
+    }}
+    {hide_mobile_nav_css}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 # =============================================================
-# 1. PC版ナビゲーション (640px以上: 常に表示)
+# トップレベルナビゲーション (1セットのみ: PCは横4列 / スマホ初期は縦4列)
 # =============================================================
 st.markdown(
     f'<div class="brand-bar">{SHURIKEN_ICON_MAIN}'
     f'<span class="brand-title">NinjaPhonetics: Biofeedback Scope</span>'
-    f'<span class="brand-sub">ACOUSTIC & PROSODY DIAGNOSTICS</span></div>',
+    f'<span class="brand-sub">ACOUSTIC & PROSODY DIAGNOSTICS</span></div>'
+    f'<span id="top-nav-anchor" style="display:none;"></span>',
     unsafe_allow_html=True,
 )
-pc_mode = "RL" if st.session_state.app_mode == "SELECT_MOBILE" else st.session_state.app_mode
-t1, t2, t3, t4 = st.columns([1.45, 1.55, 1.55, 1.45])
-with t1:
-    if st.button("A1: 音素ホルマント (R / L)", key="pc_tab_a1", type="primary" if pc_mode == "RL" else "secondary", use_container_width=True):
+
+tab_m1, tab_m2, tab_m3, tab_m4 = st.columns([1.45, 1.55, 1.55, 1.45])
+with tab_m1:
+    if st.button("A1: 音素ホルマント (R / L)", key="nav_a1", type="primary" if st.session_state.app_mode == "RL" else "secondary", use_container_width=True):
         st.session_state.app_mode = "RL"
+        st.session_state.nav_selected = True
         st.query_params["mode"] = "RL"
         st.rerun()
-with t2:
-    if st.button("B1: 歯擦音スコープ (/si/ vs /ʃi/)", key="pc_tab_b1", type="primary" if pc_mode == "SIBILANT" else "secondary", use_container_width=True):
+with tab_m2:
+    if st.button("B1: 歯擦音スコープ (/si/ vs /ʃi/)", key="nav_b1", type="primary" if st.session_state.app_mode == "SIBILANT" else "secondary", use_container_width=True):
         st.session_state.app_mode = "SIBILANT"
+        st.session_state.nav_selected = True
         st.query_params["mode"] = "SIBILANT"
         st.rerun()
-with t3:
-    if st.button("E2: プロソディ＆ストレス拍診断", key="pc_tab_e2", type="primary" if pc_mode == "RHYTHM" else "secondary", use_container_width=True):
+with tab_m3:
+    if st.button("E2: プロソディ＆ストレス拍診断", key="nav_e2", type="primary" if st.session_state.app_mode == "RHYTHM" else "secondary", use_container_width=True):
         st.session_state.app_mode = "RHYTHM"
+        st.session_state.nav_selected = True
         st.query_params["mode"] = "RHYTHM"
         st.rerun()
-with t4:
-    if st.button("L1: Ninja Listening (YouTube)", key="pc_tab_l1", type="primary" if pc_mode == "LISTENING" else "secondary", use_container_width=True):
+with tab_m4:
+    if st.button("L1: Ninja Listening (YouTube)", key="nav_l1", type="primary" if st.session_state.app_mode == "LISTENING" else "secondary", use_container_width=True):
         st.session_state.app_mode = "LISTENING"
-        st.query_params["mode"] = "LISTENING"
-        st.rerun()
-
-# =============================================================
-# 2. スマホ版ナビゲーション (639px以下: 初期3択 B1 / E2 / L1)
-# =============================================================
-if st.session_state.mobile_menu_open or st.session_state.app_mode == "SELECT_MOBILE":
-    st.markdown(
-        f'<div class="mobile-brand-hdr" style="display:flex;align-items:center;gap:8px;padding:6px 4px 10px;">'
-        f'{SHURIKEN_ICON_SM}<span style="font-weight:800;font-size:1.05rem;color:#F8FAFC;">NinjaPhonetics</span></div>',
-        unsafe_allow_html=True,
-    )
-    if st.button("B1: 歯擦音スコープ (/si/ vs /ʃi/)", key="mob_btn_b1", type="tertiary", use_container_width=True):
-        st.session_state.app_mode = "SIBILANT"
-        st.session_state.mobile_menu_open = False
-        st.query_params["mode"] = "SIBILANT"
-        st.rerun()
-    if st.button("E2: プロソディ＆ストレス拍診断", key="mob_btn_e2", type="tertiary", use_container_width=True):
-        st.session_state.app_mode = "RHYTHM"
-        st.session_state.mobile_menu_open = False
-        st.query_params["mode"] = "RHYTHM"
-        st.rerun()
-    if st.button("L1: Ninja Listening (YouTube)", key="mob_btn_l1", type="tertiary", use_container_width=True):
-        st.session_state.app_mode = "LISTENING"
-        st.session_state.mobile_menu_open = False
+        st.session_state.nav_selected = True
         st.query_params["mode"] = "LISTENING"
         st.rerun()
 
