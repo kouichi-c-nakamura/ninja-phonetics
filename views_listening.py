@@ -4,14 +4,12 @@ views_listening.py: Ninja Listening Trainer (YouTube) module for NinjaPhonetics
 import json
 from pathlib import Path
 import re
-import urllib.request
-import xml.etree.ElementTree as ET
 import streamlit as st
 import streamlit.components.v1 as components
 from youtube_transcript_api import YouTubeTranscriptApi
 
 STATE_FILE = Path.home() / ".ninja_listening_state.json"
-DEFAULT_RELAY_URL = "https://yt-caption-relay.kouichi-c-nakamura.workers.dev"
+TRANSCRIPT_CACHE_DIR = Path.home() / ".ninja_listening_transcripts"
 
 
 def load_last_video_id() -> str:
@@ -30,6 +28,29 @@ def save_last_video_id(video_id: str) -> None:
             json.dumps({"last_video_id": video_id}),
             encoding="utf-8",
         )
+    except Exception:
+        pass
+
+
+def load_cached_transcript(video_id: str) -> list[dict] | None:
+    try:
+        p = TRANSCRIPT_CACHE_DIR / f"{video_id}.json"
+        if p.exists():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, list) and data:
+                return data
+    except Exception:
+        pass
+    return None
+
+
+def save_cached_transcript(video_id: str, captions: list[dict]) -> None:
+    if not video_id or not captions:
+        return
+    try:
+        TRANSCRIPT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        p = TRANSCRIPT_CACHE_DIR / f"{video_id}.json"
+        p.write_text(json.dumps(captions, ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass
 
@@ -84,129 +105,115 @@ def merge_into_sentences(raw_items: list[dict]) -> list[dict]:
     return merged
 
 
-def _parse_timedtext_xml(xml_bytes: bytes) -> list[dict]:
-    root = ET.fromstring(xml_bytes)
-    items = []
-    for elem in root.findall(".//text"):
-        start = float(elem.attrib.get("start", 0.0))
-        dur = float(elem.attrib.get("dur", 1.0))
-        txt = "".join(elem.itertext()).replace("\n", " ").strip()
-        if txt:
-            items.append({
-                "start": start,
-                "duration": dur,
-                "end": start + dur,
-                "text": txt,
-            })
-    if not items:
-        raise RuntimeError("Empty caption XML")
+@st.cache_data(show_spinner=False, ttl=3600)
+def fetch_transcript(video_id: str, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
+    if hasattr(YouTubeTranscriptApi, "fetch") or not hasattr(YouTubeTranscriptApi, "get_transcript"):
+        api = YouTubeTranscriptApi()
+        fetched = api.fetch(video_id, languages=list(languages))
+        items = [
+            {
+                "start": float(item.start),
+                "duration": float(item.duration),
+                "end": float(item.start + item.duration),
+                "text": item.text.replace("\n", " ").strip(),
+            }
+            for item in fetched
+        ]
+    else:
+        raw = YouTubeTranscriptApi.get_transcript(video_id, languages=list(languages))
+        items = [
+            {
+                "start": float(item["start"]),
+                "duration": float(item["duration"]),
+                "end": float(item["start"] + item["duration"]),
+                "text": item["text"].replace("\n", " ").strip(),
+            }
+            for item in raw
+        ]
     return merge_into_sentences(items)
 
 
-def _fetch_via_cf_worker(video_id: str, lang: str = "en") -> list[dict]:
-    try:
-        relay_url = st.secrets.get("YT_RELAY_URL", DEFAULT_RELAY_URL).strip().rstrip("/")
-    except Exception:
-        relay_url = DEFAULT_RELAY_URL
-    if not relay_url:
-        raise RuntimeError("YT_RELAY_URL not configured")
-    req = urllib.request.Request(
-        f"{relay_url}?v={video_id}&lang={lang}",
-        headers={"User-Agent": "NinjaPhonetics/1.0"},
+def _ts_to_seconds(ts: str) -> float:
+    parts = [int(p) for p in ts.strip().split(":")]
+    if len(parts) == 3:
+        return float(parts[0] * 3600 + parts[1] * 60 + parts[2])
+    if len(parts) == 2:
+        return float(parts[0] * 60 + parts[1])
+    return 0.0
+
+
+def parse_subtitles_any(raw_text: str) -> list[dict]:
+    """Parse either .srt format OR YouTube 'Show transcript' copy-paste text."""
+    text = raw_text.strip()
+    if not text:
+        return []
+
+    # 1. SRT形式 (00:00:01,200 --> 00:00:04,500)
+    srt_re = re.compile(
+        r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})"
     )
-    with urllib.request.urlopen(req, timeout=12) as resp:
-        if resp.status != 200:
-            raise RuntimeError(f"Worker returned HTTP {resp.status}")
-        return _parse_timedtext_xml(resp.read())
-
-
-def _fetch_via_innertube(video_id: str, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
-    payload = json.dumps({
-        "context": {
-            "client": {
-                "clientName": "ANDROID",
-                "clientVersion": "19.09.37",
-                "hl": "en",
-                "gl": "US",
-            }
-        },
-        "videoId": video_id,
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-
-    tracks = (
-        data.get("captions", {})
-        .get("playerCaptionsTracklistRenderer", {})
-        .get("captionTracks", [])
-    )
-    if not tracks:
-        raise RuntimeError("No caption tracks returned by Innertube")
-
-    chosen = None
-    for lang in languages:
-        for t in tracks:
-            if t.get("languageCode") == lang:
-                chosen = t
-                break
-        if chosen:
-            break
-    if not chosen:
-        for t in tracks:
-            if str(t.get("languageCode", "")).startswith("en"):
-                chosen = t
-                break
-    if not chosen:
-        chosen = tracks[0]
-
-    with urllib.request.urlopen(chosen["baseUrl"], timeout=10) as xml_resp:
-        return _parse_timedtext_xml(xml_resp.read())
-
-
-@st.cache_data(show_spinner=False, ttl=3600)
-def fetch_transcript(video_id: str, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
-    try:
-        return _fetch_via_cf_worker(video_id, languages[0])
-    except Exception:
-        pass
-
-    try:
-        if hasattr(YouTubeTranscriptApi, "fetch") or not hasattr(YouTubeTranscriptApi, "get_transcript"):
-            api = YouTubeTranscriptApi()
-            fetched = api.fetch(video_id, languages=list(languages))
-            items = [
-                {
-                    "start": float(item.start),
-                    "duration": float(item.duration),
-                    "end": float(item.start + item.duration),
-                    "text": item.text.replace("\n", " ").strip(),
-                }
-                for item in fetched
-            ]
-        else:
-            raw = YouTubeTranscriptApi.get_transcript(video_id, languages=list(languages))
-            items = [
-                {
-                    "start": float(item["start"]),
-                    "duration": float(item["duration"]),
-                    "end": float(item["start"] + item["duration"]),
-                    "text": item["text"].replace("\n", " ").strip(),
-                }
-                for item in raw
-            ]
+    if srt_re.search(text):
+        blocks = re.split(r"\r?\n\r?\n+", text)
+        items = []
+        for blk in blocks:
+            lines = [ln.strip() for ln in blk.splitlines() if ln.strip()]
+            m = None
+            text_start_idx = 0
+            for idx, ln in enumerate(lines[:2]):
+                m = srt_re.search(ln)
+                if m:
+                    text_start_idx = idx + 1
+                    break
+            if not m:
+                continue
+            h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, m.groups())
+            start = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0
+            end = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0
+            txt = " ".join(re.sub(r"<[^>]+>", "", ln) for ln in lines[text_start_idx:]).strip()
+            if txt:
+                items.append({
+                    "start": start,
+                    "duration": max(0.2, end - start),
+                    "end": end,
+                    "text": txt,
+                })
         return merge_into_sentences(items)
-    except Exception:
-        return _fetch_via_innertube(video_id, languages)
-      
+
+    # 2. YouTube「文字起こしを表示」コピペ形式 ("0:00\nテキスト" / "0:00 テキスト" 両対応)
+    ts_line_re = re.compile(r"^(\d{1,2}:\d{2}(?::\d{2})?)(?:\s+(.*))?$")
+    entries = []
+    cur_start = None
+    cur_lines = []
+
+    for raw_ln in text.splitlines():
+        ln = raw_ln.strip()
+        if not ln:
+            continue
+        m = ts_line_re.match(ln)
+        if m:
+            if cur_start is not None and cur_lines:
+                entries.append((cur_start, " ".join(cur_lines)))
+            cur_start = _ts_to_seconds(m.group(1))
+            cur_lines = [m.group(2).strip()] if m.group(2) and m.group(2).strip() else []
+        elif cur_start is not None:
+            cur_lines.append(ln)
+
+    if cur_start is not None and cur_lines:
+        entries.append((cur_start, " ".join(cur_lines)))
+
+    items = []
+    for i, (st_sec, txt) in enumerate(entries):
+        end_sec = entries[i + 1][0] if i + 1 < len(entries) else (st_sec + 4.0)
+        end_sec = max(st_sec + 0.5, end_sec)
+        items.append({
+            "start": st_sec,
+            "duration": end_sec - st_sec,
+            "end": end_sec,
+            "text": txt,
+        })
+    return merge_into_sentences(items)
+
+
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -348,7 +355,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-  /* Link / Unlink Icon Buttons */
   .link-icon-btn {
     display: inline-flex;
     align-items: center;
@@ -383,7 +389,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .link-icon-btn.unsync-unlink:hover { background: rgba(251, 191, 36, 0.24); }
   .link-icon-btn:active { transform: scale(0.94); }
 
-  /* Tappable Saved + Offset Pill */
   .offset-toggle-pill {
     display: inline-flex;
     align-items: center;
@@ -415,7 +420,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     font-weight: 700;
   }
 
-  /* Collapsible 2-row Lagging / Leading Drawer */
   .sync-nudge-drawer {
     display: none;
     flex-direction: column;
@@ -1433,7 +1437,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     }
   } catch (e) {}
 
-function applyParentUrlBarVisibility() {
+  function applyParentUrlBarVisibility() {
     try {
       if (!window.parent || !window.parent.document) return;
       const inputEl = window.parent.document.querySelector('input[aria-label="YouTube URL"]');
@@ -1443,7 +1447,6 @@ function applyParentUrlBarVisibility() {
         const shouldShow = !isRunning && urlBarManuallyVisible;
         container.style.display = shouldShow ? "" : "none";
       }
-      // Hide the parent ▼ / ▲ mobile drawer handle while sequence is running
       const buttons = window.parent.document.querySelectorAll('button');
       buttons.forEach((btn) => {
         const txt = (btn.textContent || "").trim();
@@ -1528,7 +1531,6 @@ function applyParentUrlBarVisibility() {
     nudgeDrawerOpen = !nudgeDrawerOpen;
     renderSyncBar();
   }
-
 
   function buildShadowingSteps() {
     const list = [
@@ -2893,39 +2895,6 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     )
 
 
-def parse_srt_text(raw_text: str) -> list[dict]:
-    blocks = re.split(r"\r?\n\r?\n+", raw_text.strip())
-    items = []
-    time_re = re.compile(
-        r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})"
-    )
-    for blk in blocks:
-        lines = [ln.strip() for ln in blk.splitlines() if ln.strip()]
-        if not lines:
-            continue
-        m = None
-        text_start_idx = 0
-        for idx, ln in enumerate(lines[:2]):
-            m = time_re.search(ln)
-            if m:
-                text_start_idx = idx + 1
-                break
-        if not m:
-            continue
-        h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, m.groups())
-        start = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0
-        end = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0
-        txt = " ".join(re.sub(r"<[^>]+>", "", ln) for ln in lines[text_start_idx:]).strip()
-        if txt:
-            items.append({
-                "start": start,
-                "duration": max(0.2, end - start),
-                "end": end,
-                "text": txt,
-            })
-    return merge_into_sentences(items)
-
-
 def render_ninja_listening() -> None:
     st.markdown(
         """
@@ -2968,31 +2937,57 @@ def render_ninja_listening() -> None:
         st.session_state["ninja_last_video_id"] = vid
         save_last_video_id(vid)
 
-        captions = None
-        try:
-            with st.spinner("字幕取得中..."):
-                captions = fetch_transcript(vid)
-        except Exception:
-            captions = None
+        captions = load_cached_transcript(vid)
+        if captions is None:
+            try:
+                with st.spinner("字幕取得中..."):
+                    captions = fetch_transcript(vid)
+                if captions:
+                    save_cached_transcript(vid, captions)
+            except Exception:
+                captions = None
 
         if captions is None:
-            srt_file = st.file_uploader(
-                "☁️ クラウドIP制限のため自動字幕を取得できませんでした。SRTファイル (.srt) を読み込むか、そのまま再生できます",
-                type=["srt", "txt"],
-                key=f"srt_up_{vid}",
-            )
-            if srt_file is not None:
-                captions = parse_srt_text(srt_file.read().decode("utf-8", errors="replace"))
-            else:
-                captions = [
-                    {
-                        "start": float(t),
-                        "duration": 10.0,
-                        "end": float(t + 10),
-                        "text": f"[{t // 60:02d}:{t % 60:02d}] (No transcript — use Mark start / Mark end)",
-                    }
-                    for t in range(0, 3600, 10)
-                ]
+            c1, c2 = st.columns([2.2, 1.0])
+            with c1:
+                pasted_sub = st.text_area(
+                    "YouTubeの「文字起こしを表示」を全選択コピーして貼り付け (0:00 ...)",
+                    height=78,
+                    placeholder="0:00\nDavid Lee Roth: David Lee Roth at your service.\n0:02\nAlex Van Halen: Alex Van Halen.",
+                    key=f"paste_sub_{vid}",
+                )
+            with c2:
+                srt_file = st.file_uploader(
+                    "または .srt を選択",
+                    type=["srt", "txt"],
+                    key=f"srt_up_{vid}",
+                )
+
+            raw_sub_text = ""
+            if pasted_sub and pasted_sub.strip():
+                raw_sub_text = pasted_sub
+            elif srt_file is not None:
+                raw_sub_text = srt_file.read().decode("utf-8", errors="replace")
+
+            if raw_sub_text:
+                parsed = parse_subtitles_any(raw_sub_text)
+                if parsed:
+                    captions = parsed
+                    save_cached_transcript(vid, captions)
+                    st.rerun()
+                else:
+                    st.warning("タイムスタンプ（0:00 や 00:00:01,000）を認識できませんでした。")
+
+        if captions is None:
+            captions = [
+                {
+                    "start": float(t),
+                    "duration": 10.0,
+                    "end": float(t + 10),
+                    "text": f"[{t // 60:02d}:{t % 60:02d}] (No transcript — paste transcript above or use Mark start / end)",
+                }
+                for t in range(0, 3600, 10)
+            ]
 
         components.html(
             build_player_html(vid, captions, url.strip()),
