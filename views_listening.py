@@ -4,6 +4,7 @@ views_listening.py: Ninja Listening Trainer (YouTube) module for NinjaPhonetics
 import json
 from pathlib import Path
 import re
+import urllib.request
 import streamlit as st
 import streamlit.components.v1 as components
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -105,8 +106,54 @@ def merge_into_sentences(raw_items: list[dict]) -> list[dict]:
     return merged
 
 
+def _fetch_via_supadata(video_id: str, lang: str = "en") -> list[dict]:
+    api_key = ""
+    try:
+        api_key = st.secrets.get("SUPADATA_API_KEY", "").strip()
+    except Exception:
+        api_key = ""
+    if not api_key:
+        raise RuntimeError("SUPADATA_API_KEY not configured")
+
+    req = urllib.request.Request(
+        f"https://api.supadata.ai/v1/youtube/transcript?videoId={video_id}&lang={lang}",
+        headers={
+            "x-api-key": api_key,
+            "User-Agent": "NinjaPhonetics/1.0",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    content = data.get("content", [])
+    if not content:
+        raise RuntimeError("No transcript content returned by Supadata")
+
+    items = []
+    for seg in content:
+        # Supadata returns offset and duration in milliseconds
+        start = float(seg.get("offset", 0)) / 1000.0
+        dur = max(0.2, float(seg.get("duration", 1000)) / 1000.0)
+        txt = str(seg.get("text", "")).replace("\n", " ").strip()
+        if txt:
+            items.append({
+                "start": start,
+                "duration": dur,
+                "end": start + dur,
+                "text": txt,
+            })
+    return merge_into_sentences(items)
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def fetch_transcript(video_id: str, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
+    # 1. Supadata API（Streamlit Cloud 上でも確実に取得可能）
+    try:
+        return _fetch_via_supadata(video_id, languages[0])
+    except Exception:
+        pass
+
+    # 2. ローカル環境向け（住宅用IPからの直接取得）
     if hasattr(YouTubeTranscriptApi, "fetch") or not hasattr(YouTubeTranscriptApi, "get_transcript"):
         api = YouTubeTranscriptApi()
         fetched = api.fetch(video_id, languages=list(languages))
@@ -131,88 +178,6 @@ def fetch_transcript(video_id: str, languages: tuple = ("en", "en-US", "en-GB"))
             for item in raw
         ]
     return merge_into_sentences(items)
-
-
-def _ts_to_seconds(ts: str) -> float:
-    parts = [int(p) for p in ts.strip().split(":")]
-    if len(parts) == 3:
-        return float(parts[0] * 3600 + parts[1] * 60 + parts[2])
-    if len(parts) == 2:
-        return float(parts[0] * 60 + parts[1])
-    return 0.0
-
-
-def parse_subtitles_any(raw_text: str) -> list[dict]:
-    """Parse either .srt format OR YouTube 'Show transcript' copy-paste text."""
-    text = raw_text.strip()
-    if not text:
-        return []
-
-    # 1. SRT形式 (00:00:01,200 --> 00:00:04,500)
-    srt_re = re.compile(
-        r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})"
-    )
-    if srt_re.search(text):
-        blocks = re.split(r"\r?\n\r?\n+", text)
-        items = []
-        for blk in blocks:
-            lines = [ln.strip() for ln in blk.splitlines() if ln.strip()]
-            m = None
-            text_start_idx = 0
-            for idx, ln in enumerate(lines[:2]):
-                m = srt_re.search(ln)
-                if m:
-                    text_start_idx = idx + 1
-                    break
-            if not m:
-                continue
-            h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, m.groups())
-            start = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0
-            end = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0
-            txt = " ".join(re.sub(r"<[^>]+>", "", ln) for ln in lines[text_start_idx:]).strip()
-            if txt:
-                items.append({
-                    "start": start,
-                    "duration": max(0.2, end - start),
-                    "end": end,
-                    "text": txt,
-                })
-        return merge_into_sentences(items)
-
-    # 2. YouTube「文字起こしを表示」コピペ形式 ("0:00\nテキスト" / "0:00 テキスト" 両対応)
-    ts_line_re = re.compile(r"^(\d{1,2}:\d{2}(?::\d{2})?)(?:\s+(.*))?$")
-    entries = []
-    cur_start = None
-    cur_lines = []
-
-    for raw_ln in text.splitlines():
-        ln = raw_ln.strip()
-        if not ln:
-            continue
-        m = ts_line_re.match(ln)
-        if m:
-            if cur_start is not None and cur_lines:
-                entries.append((cur_start, " ".join(cur_lines)))
-            cur_start = _ts_to_seconds(m.group(1))
-            cur_lines = [m.group(2).strip()] if m.group(2) and m.group(2).strip() else []
-        elif cur_start is not None:
-            cur_lines.append(ln)
-
-    if cur_start is not None and cur_lines:
-        entries.append((cur_start, " ".join(cur_lines)))
-
-    items = []
-    for i, (st_sec, txt) in enumerate(entries):
-        end_sec = entries[i + 1][0] if i + 1 < len(entries) else (st_sec + 4.0)
-        end_sec = max(st_sec + 0.5, end_sec)
-        items.append({
-            "start": st_sec,
-            "duration": end_sec - st_sec,
-            "end": end_sec,
-            "text": txt,
-        })
-    return merge_into_sentences(items)
-
 
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
@@ -2944,50 +2909,9 @@ def render_ninja_listening() -> None:
                     captions = fetch_transcript(vid)
                 if captions:
                     save_cached_transcript(vid, captions)
-            except Exception:
-                captions = None
-
-        if captions is None:
-            c1, c2 = st.columns([2.2, 1.0])
-            with c1:
-                pasted_sub = st.text_area(
-                    "YouTubeの「文字起こしを表示」を全選択コピーして貼り付け (0:00 ...)",
-                    height=78,
-                    placeholder="0:00\nDavid Lee Roth: David Lee Roth at your service.\n0:02\nAlex Van Halen: Alex Van Halen.",
-                    key=f"paste_sub_{vid}",
-                )
-            with c2:
-                srt_file = st.file_uploader(
-                    "または .srt を選択",
-                    type=["srt", "txt"],
-                    key=f"srt_up_{vid}",
-                )
-
-            raw_sub_text = ""
-            if pasted_sub and pasted_sub.strip():
-                raw_sub_text = pasted_sub
-            elif srt_file is not None:
-                raw_sub_text = srt_file.read().decode("utf-8", errors="replace")
-
-            if raw_sub_text:
-                parsed = parse_subtitles_any(raw_sub_text)
-                if parsed:
-                    captions = parsed
-                    save_cached_transcript(vid, captions)
-                    st.rerun()
-                else:
-                    st.warning("タイムスタンプ（0:00 や 00:00:01,000）を認識できませんでした。")
-
-        if captions is None:
-            captions = [
-                {
-                    "start": float(t),
-                    "duration": 10.0,
-                    "end": float(t + 10),
-                    "text": f"[{t // 60:02d}:{t % 60:02d}] (No transcript — paste transcript above or use Mark start / end)",
-                }
-                for t in range(0, 3600, 10)
-            ]
+            except Exception as e:
+                st.error(f"字幕を取得できませんでした: {e}")
+                return
 
         components.html(
             build_player_html(vid, captions, url.strip()),
