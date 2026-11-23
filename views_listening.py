@@ -1319,6 +1319,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         const shouldShow = !isRunning && urlBarManuallyVisible;
         container.style.display = shouldShow ? "" : "none";
       }
+      // Hide the parent mode-toggle button while sequence is running
+      const buttons = window.parent.document.querySelectorAll('button');
+      buttons.forEach((btn) => {
+        if (btn.textContent && (btn.textContent.includes("L1: Ninja Listening") || btn.textContent.includes("Minimize Menu"))) {
+          const btnContainer = btn.closest('div[data-testid="element-container"]') || btn;
+          btnContainer.style.display = isRunning ? "none" : "";
+        }
+      });
     } catch (e) {}
     setTimeout(fitParentIframe, 25);
   }
