@@ -91,14 +91,48 @@ st.markdown(
     <style>
     header[data-testid="stHeader"] {{ display: none; }}
     .block-container {{
-        padding-top: 0.45rem !important;
+        padding-top: 0.35rem !important;
         padding-bottom: 0.2rem !important;
+    }}
+    /* PC (>=640px) ではスマホ用プルダウンハンドルを隠す */
+    @media (min-width: 640px) {{
+        div:has(#mobile-drawer-handle) + div {{
+            display: none !important;
+        }}
+    }}
+    /* スマホ用プルダウンハンドル（極細タブ風デザイン） */
+    @media (max-width: 639px) {{
+        div:has(#mobile-drawer-handle) + div button {{
+            min-height: 22px !important;
+            height: 22px !important;
+            padding: 0 12px !important;
+            font-size: 11px !important;
+            line-height: 1 !important;
+            color: #94a3b8 !important;
+            background: rgba(30, 41, 59, 0.75) !important;
+            border: 1px solid #334155 !important;
+            border-top: none !important;
+            border-radius: 0 0 10px 10px !important;
+            margin-top: -6px !important;
+            margin-bottom: 2px !important;
+        }}
+        div:has(#mobile-drawer-handle) + div button:hover {{
+            color: #f8fafc !important;
+            border-color: #38bdf8 !important;
+        }}
     }}
     {hide_mobile_nav_css}
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+# スマホ用プルダウンハンドル（選択済みなら ▾ で開く、開いている間は ▴ で閉じる）
+st.markdown('<span id="mobile-drawer-handle" style="display:none;"></span>', unsafe_allow_html=True)
+handle_icon = "▾" if st.session_state.nav_selected else "▴"
+if st.button(handle_icon, key="mob_nav_drawer_btn", use_container_width=True):
+    st.session_state.nav_selected = not st.session_state.nav_selected
+    st.rerun()
 
 # =============================================================
 # トップレベルナビゲーション (1セットのみ: PCは横4列 / スマホ初期は縦4列)
