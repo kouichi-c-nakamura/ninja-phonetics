@@ -1335,7 +1335,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     }
   } catch (e) {}
 
-  function applyParentUrlBarVisibility() {
+function applyParentUrlBarVisibility() {
     try {
       if (!window.parent || !window.parent.document) return;
       const inputEl = window.parent.document.querySelector('input[aria-label="YouTube URL"]');
@@ -1345,10 +1345,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         const shouldShow = !isRunning && urlBarManuallyVisible;
         container.style.display = shouldShow ? "" : "none";
       }
-      // Hide the parent mode-toggle button while sequence is running
+      // Hide the parent ▼ / ▲ mobile drawer handle while sequence is running
       const buttons = window.parent.document.querySelectorAll('button');
       buttons.forEach((btn) => {
-        if (btn.textContent && (btn.textContent.includes("L1: Ninja Listening") || btn.textContent.includes("Minimize Menu"))) {
+        const txt = (btn.textContent || "").trim();
+        if (txt === "▼" || txt === "▲") {
           const btnContainer = btn.closest('div[data-testid="element-container"]') || btn;
           btnContainer.style.display = isRunning ? "none" : "";
         }
@@ -2794,6 +2795,40 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     )
 
 
+def parse_srt_text(raw_text: str) -> list[dict]:
+    """Parse standard .srt subtitle text into caption dicts."""
+    blocks = re.split(r"\r?\n\r?\n+", raw_text.strip())
+    items = []
+    time_re = re.compile(
+        r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})"
+    )
+    for blk in blocks:
+        lines = [ln.strip() for ln in blk.splitlines() if ln.strip()]
+        if not lines:
+            continue
+        m = None
+        text_start_idx = 0
+        for idx, ln in enumerate(lines[:2]):
+            m = time_re.search(ln)
+            if m:
+                text_start_idx = idx + 1
+                break
+        if not m:
+            continue
+        h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, m.groups())
+        start = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0
+        end = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0
+        txt = " ".join(re.sub(r"<[^>]+>", "", ln) for ln in lines[text_start_idx:]).strip()
+        if txt:
+            items.append({
+                "start": start,
+                "duration": max(0.2, end - start),
+                "end": end,
+                "text": txt,
+            })
+    return merge_into_sentences(items)
+
+
 def render_ninja_listening() -> None:
     st.markdown(
         """
@@ -2829,18 +2864,37 @@ def render_ninja_listening() -> None:
         vid = extract_video_id(url)
         if not vid:
             st.error("有効なYouTube URLではありません。")
-        else:
-            if st.query_params.get("v") != vid:
-                st.query_params["v"] = vid
-            st.session_state["ninja_last_video_id"] = vid
-            save_last_video_id(vid)
-            try:
-                with st.spinner("字幕取得中..."):
-                    captions = fetch_transcript(vid)
-                components.html(
-                    build_player_html(vid, captions, url.strip()),
-                    height=680,
-                    scrolling=False,
-                )
-            except Exception as e:
-                st.error(f"字幕を取得できませんでした: {e}")
+            return
+
+        if st.query_params.get("v") != vid:
+            st.query_params["v"] = vid
+        st.session_state["ninja_last_video_id"] = vid
+        save_last_video_id(vid)
+
+        captions = None
+        cloud_blocked = False
+        try:
+            with st.spinner("字幕取得中..."):
+                captions = fetch_transcript(vid)
+        except Exception as e:
+            err_str = str(e)
+            if "IpBlocked" in err_str or "RequestBlocked" in err_str or "cloud provider" in err_str:
+                cloud_blocked = True
+            else:
+                st.warning(f"自動字幕を取得できませんでした: {e}")
+
+        if captions is None:
+            if cloud_blocked:
+                st.info("☁️ Streamlit Cloud のサーバーIPが YouTube に制限されているため、SRTファイルを読み込むか字幕なし（URLのURLボタンから非表示可）で起動します。")
+            srt_file = st.file_uploader("SRT字幕ファイル (.srt) を選択（任意）", type=["srt", "txt"], key=f"srt_up_{vid}")
+            if srt_file is not None:
+                captions = parse_srt_text(srt_file.read().decode("utf-8", errors="replace"))
+            else:
+                # Fallback placeholder timeline so the YouTube player & speed/VAS trainer still launch
+                captions = [{"start": float(t), "duration": 10.0, "end": float(t + 10), "text": f"[{t // 60:02d}:{t % 60:02d}] (No transcript loaded — use Mark start / Mark end)"} for t in range(0, 3600, 10)]
+
+        components.html(
+            build_player_html(vid, captions, url.strip()),
+            height=680,
+            scrolling=False,
+        )

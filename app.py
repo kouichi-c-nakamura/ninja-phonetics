@@ -86,7 +86,13 @@ hide_mobile_nav_css = """
             display: none !important;
         }
     }
-""" if st.session_state.nav_selected else ""
+""" if st.session_state.nav_selected else """
+    @media (max-width: 639px) {
+        div[data-testid="stElementContainer"]:has(#mode-body-anchor) ~ div {
+            display: none !important;
+        }
+    }
+"""
 
 st.markdown(
     f"""
@@ -117,17 +123,21 @@ st.markdown(
             display: none !important;
         }}
         div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button {{
-            min-height: 20px !important;
-            height: 20px !important;
-            padding: 0 12px !important;
-            font-size: 11px !important;
+            min-height: 36px !important;
+            height: 36px !important;
+            padding: 0 16px !important;
+            font-size: 22px !important;
             line-height: 1 !important;
             color: #94a3b8 !important;
             background: rgba(30, 41, 59, 0.75) !important;
             border: 1px solid #334155 !important;
             border-top: none !important;
-            border-radius: 0 0 10px 10px !important;
+            border-radius: 0 0 12px 12px !important;
             margin: 0 !important;
+        }}
+        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button p {{
+            font-size: 22px !important;
+            line-height: 1 !important;
         }}
         div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button:hover {{
             color: #f8fafc !important;
@@ -142,7 +152,7 @@ st.markdown(
 
 # スマホ用プルダウンハンドル（選択済みなら ▾ で開く、開いている間は ▴ で閉じる）
 st.markdown('<span id="mobile-drawer-handle" style="display:none;"></span>', unsafe_allow_html=True)
-handle_icon = "▾" if st.session_state.nav_selected else "▴"
+handle_icon = "▼" if st.session_state.nav_selected else "▲"
 if st.button(handle_icon, key="mob_nav_drawer_btn", use_container_width=True):
     st.session_state.nav_selected = not st.session_state.nav_selected
     st.rerun()
@@ -183,6 +193,7 @@ with tab_m4:
         st.session_state.nav_selected = True
         st.query_params["mode"] = "LISTENING"
         st.rerun()
+st.markdown('<span id="mode-body-anchor" style="display:none;"></span>', unsafe_allow_html=True)
 
 # -------------------------------------------------------------
 # A1 モード
