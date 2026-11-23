@@ -11,6 +11,7 @@ import streamlit.components.v1 as components
 from youtube_transcript_api import YouTubeTranscriptApi
 
 STATE_FILE = Path.home() / ".ninja_listening_state.json"
+DEFAULT_RELAY_URL = "https://yt-caption-relay.kouichi-c-nakamura.workers.dev"
 
 
 def load_last_video_id() -> str:
@@ -83,8 +84,43 @@ def merge_into_sentences(raw_items: list[dict]) -> list[dict]:
     return merged
 
 
+def _parse_timedtext_xml(xml_bytes: bytes) -> list[dict]:
+    root = ET.fromstring(xml_bytes)
+    items = []
+    for elem in root.findall(".//text"):
+        start = float(elem.attrib.get("start", 0.0))
+        dur = float(elem.attrib.get("dur", 1.0))
+        txt = "".join(elem.itertext()).replace("\n", " ").strip()
+        if txt:
+            items.append({
+                "start": start,
+                "duration": dur,
+                "end": start + dur,
+                "text": txt,
+            })
+    if not items:
+        raise RuntimeError("Empty caption XML")
+    return merge_into_sentences(items)
+
+
+def _fetch_via_cf_worker(video_id: str, lang: str = "en") -> list[dict]:
+    try:
+        relay_url = st.secrets.get("YT_RELAY_URL", DEFAULT_RELAY_URL).strip().rstrip("/")
+    except Exception:
+        relay_url = DEFAULT_RELAY_URL
+    if not relay_url:
+        raise RuntimeError("YT_RELAY_URL not configured")
+    req = urllib.request.Request(
+        f"{relay_url}?v={video_id}&lang={lang}",
+        headers={"User-Agent": "NinjaPhonetics/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"Worker returned HTTP {resp.status}")
+        return _parse_timedtext_xml(resp.read())
+
+
 def _fetch_via_innertube(video_id: str, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
-    """Fallback caption fetcher via YouTube Innertube Android client."""
     payload = json.dumps({
         "context": {
             "client": {
@@ -132,30 +168,17 @@ def _fetch_via_innertube(video_id: str, languages: tuple = ("en", "en-US", "en-G
     if not chosen:
         chosen = tracks[0]
 
-    base_url = chosen["baseUrl"]
-    with urllib.request.urlopen(base_url, timeout=10) as xml_resp:
-        xml_bytes = xml_resp.read()
-
-    root = ET.fromstring(xml_bytes)
-    items = []
-    for elem in root.findall(".//text"):
-        start = float(elem.attrib.get("start", 0.0))
-        dur = float(elem.attrib.get("dur", 1.0))
-        txt = "".join(elem.itertext()).replace("\n", " ").strip()
-        if txt:
-            items.append({
-                "start": start,
-                "duration": dur,
-                "end": start + dur,
-                "text": txt,
-            })
-    if not items:
-        raise RuntimeError("Empty caption XML")
-    return merge_into_sentences(items)
+    with urllib.request.urlopen(chosen["baseUrl"], timeout=10) as xml_resp:
+        return _parse_timedtext_xml(xml_resp.read())
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def fetch_transcript(video_id: str, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
+    try:
+        return _fetch_via_cf_worker(video_id, languages[0])
+    except Exception:
+        pass
+
     try:
         if hasattr(YouTubeTranscriptApi, "fetch") or not hasattr(YouTubeTranscriptApi, "get_transcript"):
             api = YouTubeTranscriptApi()
@@ -183,8 +206,7 @@ def fetch_transcript(video_id: str, languages: tuple = ("en", "en-US", "en-GB"))
         return merge_into_sentences(items)
     except Exception:
         return _fetch_via_innertube(video_id, languages)
-
-
+      
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
