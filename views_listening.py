@@ -191,7 +191,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     border-bottom: 1px solid #1e293b;
     font-size: 11px;
     flex-shrink: 0;
-    gap: 4px;
+    gap: 5px;
   }
   .meta-top {
     display: flex;
@@ -200,7 +200,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     gap: 6px;
     min-height: 26px;
   }
-  .meta-left-controls {
+  .meta-left-controls,
+  .meta-right-controls {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -215,6 +216,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     font-weight: 700;
     cursor: pointer;
     line-height: 1.2;
+    letter-spacing: 0.02em;
   }
   .url-toggle-btn:hover,
   .url-toggle-btn.active {
@@ -235,12 +237,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
     transition: transform 0.08s, filter 0.14s;
   }
-  .yt-play-btn:hover {
-    filter: brightness(1.08);
-  }
-  .yt-play-btn:active {
-    transform: scale(0.94);
-  }
+  .yt-play-btn:hover { filter: brightness(1.08); }
+  .yt-play-btn:active { transform: scale(0.94); }
   .yt-play-btn svg {
     width: 13px;
     height: 13px;
@@ -252,78 +250,106 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-  .sync-ok-btn {
+  /* Link / Unlink Icon Buttons */
+  .link-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 24px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: transform 0.08s, background 0.14s;
+  }
+  .link-icon-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .link-icon-btn.sync-link {
     background: #10b981;
     color: #020617;
     border: none;
-    border-radius: 6px;
-    padding: 5px 14px;
-    font-size: 12.5px;
-    font-weight: 800;
-    letter-spacing: 0.01em;
-    cursor: pointer;
-    white-space: nowrap;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.38);
-    transition: background 0.14s, transform 0.08s;
+    box-shadow: 0 1px 6px rgba(16, 185, 129, 0.38);
   }
-  .sync-ok-btn:hover {
-    background: #34d399;
-  }
-  .sync-ok-btn:active {
-    transform: translateY(1px);
-  }
-  .unsync-btn {
+  .link-icon-btn.sync-link:hover { background: #34d399; }
+  .link-icon-btn.unsync-unlink {
     background: rgba(251, 191, 36, 0.14);
     color: #fbbf24;
     border: 1px solid rgba(251, 191, 36, 0.4);
-    border-radius: 4px;
+  }
+  .link-icon-btn.unsync-unlink:hover { background: rgba(251, 191, 36, 0.24); }
+  .link-icon-btn:active { transform: scale(0.94); }
+
+  /* Tappable Saved + Offset Pill */
+  .offset-toggle-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(30, 41, 59, 0.85);
+    border: 1px solid #334155;
+    border-radius: 5px;
     padding: 2px 7px;
-    font-size: 10.5px;
-    font-weight: 600;
     cursor: pointer;
+    transition: border-color 0.14s, background 0.14s;
+  }
+  .offset-toggle-pill:hover,
+  .offset-toggle-pill.open {
+    border-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.12);
   }
   .offset-badge {
     color: #e2e8f0;
     font-weight: 700;
-    padding: 0 5px;
     font-variant-numeric: tabular-nums;
     font-size: 11px;
   }
   .saved-tag {
     font-size: 9.5px;
     color: #34d399;
-    background: rgba(16, 185, 129, 0.14);
-    border: 1px solid rgba(16, 185, 129, 0.35);
-    border-radius: 4px;
-    padding: 1px 5px;
-    margin-right: 4px;
+    background: rgba(16, 185, 129, 0.16);
+    border-radius: 3px;
+    padding: 0 4px;
+    font-weight: 700;
   }
-  .sync-nudge-grid {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
+
+  /* Collapsible 2-row Lagging / Leading Drawer */
+  .sync-nudge-drawer {
+    display: none;
+    flex-direction: column;
     gap: 4px;
+    padding-top: 3px;
+    border-top: 1px solid #1e293b;
   }
-  .nudge-group {
+  .sync-nudge-drawer.open {
     display: flex;
-    align-items: center;
-    gap: 3px;
   }
-  .group-label {
+  .nudge-labels-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     font-size: 10.5px;
-    color: #f8fafc;
-    font-weight: 500;
-    white-space: nowrap;
-    margin-right: 2px;
+    color: #cbd5e1;
+    font-weight: 600;
+    padding: 0 2px;
+  }
+  .nudge-buttons-row {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 3px;
   }
   .nudge-btn {
     background: var(--card);
     color: var(--text);
     border: 1px solid #334155;
     border-radius: 4px;
-    padding: 2px 6px;
+    padding: 3px 0;
     font-size: 10.5px;
+    text-align: center;
     cursor: pointer;
     font-variant-numeric: tabular-nums;
   }
@@ -332,8 +358,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     color: #fff;
   }
 
-  .app-shell.sequence-running .sync-nudge-grid,
-  .app-shell.sequence-running .unsync-btn,
+  .app-shell.sequence-running .sync-nudge-drawer,
+  .app-shell.sequence-running .unsync-unlink,
   .app-shell.sequence-running .saved-tag,
   .app-shell.sequence-running .url-toggle-btn,
   .app-shell.sequence-running .range-row {
@@ -1394,6 +1420,17 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   const YT_PLAY_ICON = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
   const YT_PAUSE_ICON = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
 
+  const LINK_ICON = '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+  const UNLINK_ICON = '<svg viewBox="0 0 24 24"><path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/></svg>';
+  let nudgeDrawerOpen = false;
+
+  function toggleNudgeDrawer() {
+    if (isRunning) return;
+    nudgeDrawerOpen = !nudgeDrawerOpen;
+    renderSyncBar();
+  }
+
+
   function buildShadowingSteps() {
     const list = [
       { speed: 1.0, cc: false },
@@ -1826,38 +1863,42 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       metaBarEl.innerHTML = `
         <div class="meta-top">
           <div class="meta-left-controls">
-            <button class="${urlBtnClass}" id="url-toggle-btn" data-tip="Change YouTube URL" onclick="toggleUrlBar()">🔗 URL</button>
+            <button class="${urlBtnClass}" id="url-toggle-btn" data-tip="Change YouTube URL" onclick="toggleUrlBar()">URL</button>
             <button class="yt-play-btn" id="play-toggle-btn" data-tip="Play / Pause video" onclick="togglePlayPause()">${YT_PLAY_ICON}</button>
             <div class="time-display" id="time-display">${curTimeText}</div>
           </div>
-          <button class="sync-ok-btn" data-tip="Accept current 0.0s subtitle timing as synced" onclick="acceptSyncAsIs()">✓ Sync OK</button>
+          <button class="link-icon-btn sync-link" data-tip="Sync subtitles (accept current timing)" onclick="acceptSyncAsIs()">${LINK_ICON}</button>
         </div>
       `;
     } else {
       const sign = timeOffset >= 0 ? "+" : "";
       const savedHtml = restoredFromCache ? `<span class="saved-tag">Saved</span>` : "";
+      const pillClass = `offset-toggle-pill${nudgeDrawerOpen ? " open" : ""}`;
+      const drawerClass = `sync-nudge-drawer${nudgeDrawerOpen ? " open" : ""}`;
       metaBarEl.innerHTML = `
         <div class="meta-top">
           <div class="meta-left-controls">
-            <button class="${urlBtnClass}" id="url-toggle-btn" data-tip="Change YouTube URL" onclick="toggleUrlBar()">🔗 URL</button>
+            <button class="${urlBtnClass}" id="url-toggle-btn" data-tip="Change YouTube URL" onclick="toggleUrlBar()">URL</button>
             <button class="yt-play-btn" id="play-toggle-btn" data-tip="Play / Pause video" onclick="togglePlayPause()">${YT_PLAY_ICON}</button>
             <div class="time-display" id="time-display">${curTimeText}</div>
           </div>
-          <div>
-            ${savedHtml}<span class="offset-badge">${sign}${timeOffset.toFixed(1)}s</span>
-            <button class="unsync-btn" data-tip="Clear saved sync and reset" onclick="unsyncAll()">Unsync</button>
+          <div class="meta-right-controls">
+            <button class="${pillClass}" data-tip="Tap to fine-tune subtitle timing" onclick="toggleNudgeDrawer()">
+              ${savedHtml}<span class="offset-badge">${sign}${timeOffset.toFixed(1)}s</span>
+            </button>
+            <button class="link-icon-btn unsync-unlink" data-tip="Unsync & reset" onclick="unsyncAll()">${UNLINK_ICON}</button>
           </div>
         </div>
-        <div class="sync-nudge-grid">
-          <div class="nudge-group">
-            <span class="group-label">Sub is LAGGING by:</span>
+        <div class="${drawerClass}">
+          <div class="nudge-labels-row">
+            <span>Sub is LAGGING by</span>
+            <span>LEADING by</span>
+          </div>
+          <div class="nudge-buttons-row">
             <button class="nudge-btn" onclick="adjustOffset(-1.0)">1s</button>
             <button class="nudge-btn" onclick="adjustOffset(-0.5)">.5s</button>
             <button class="nudge-btn" onclick="adjustOffset(-0.2)">.2s</button>
             <button class="nudge-btn" onclick="adjustOffset(-0.1)">.1s</button>
-          </div>
-          <div class="nudge-group">
-            <span class="group-label">Sub is LEADING by:</span>
             <button class="nudge-btn" onclick="adjustOffset(0.1)">.1s</button>
             <button class="nudge-btn" onclick="adjustOffset(0.2)">.2s</button>
             <button class="nudge-btn" onclick="adjustOffset(0.5)">.5s</button>

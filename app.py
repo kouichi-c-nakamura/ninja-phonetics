@@ -77,10 +77,12 @@ if "e2_eval_history" not in st.session_state: st.session_state.e2_eval_history =
 if "e2_plot_view" not in st.session_state: st.session_state.e2_plot_view = "scatter2d"
 
 # スマホ選択済み状態のときだけ、639px以下で上部ブランドヘッダーと4タブを非表示にする
+# スマホ選択済み状態のときだけ、639px以下で上部ブランドヘッダーと4タブを非表示にする
 hide_mobile_nav_css = """
     @media (max-width: 639px) {
         .brand-bar { display: none !important; }
-        div:has(#top-nav-anchor) + div {
+        div[data-testid="stElementContainer"]:has(#top-nav-anchor),
+        div[data-testid="stElementContainer"]:has(#top-nav-anchor) + div {
             display: none !important;
         }
     }
@@ -96,15 +98,27 @@ st.markdown(
     }}
     /* PC (>=640px) ではスマホ用プルダウンハンドルを隠す */
     @media (min-width: 640px) {{
-        div:has(#mobile-drawer-handle) + div {{
+        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle),
+        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div {{
             display: none !important;
         }}
     }}
-    /* スマホ用プルダウンハンドル（極細タブ風デザイン） */
+    /* スマホ (<=639px) の余白詰め＆プルダウンハンドル */
     @media (max-width: 639px) {{
-        div:has(#mobile-drawer-handle) + div button {{
-            min-height: 22px !important;
-            height: 22px !important;
+        .block-container {{
+            padding-top: 0.1rem !important;
+            padding-left: 0.35rem !important;
+            padding-right: 0.35rem !important;
+        }}
+        div[data-testid="stVerticalBlock"] {{
+            gap: 0.15rem !important;
+        }}
+        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) {{
+            display: none !important;
+        }}
+        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button {{
+            min-height: 20px !important;
+            height: 20px !important;
             padding: 0 12px !important;
             font-size: 11px !important;
             line-height: 1 !important;
@@ -113,10 +127,9 @@ st.markdown(
             border: 1px solid #334155 !important;
             border-top: none !important;
             border-radius: 0 0 10px 10px !important;
-            margin-top: -6px !important;
-            margin-bottom: 2px !important;
+            margin: 0 !important;
         }}
-        div:has(#mobile-drawer-handle) + div button:hover {{
+        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button:hover {{
             color: #f8fafc !important;
             border-color: #38bdf8 !important;
         }}
