@@ -4,6 +4,8 @@ views_listening.py: Ninja Listening Trainer (YouTube) module for NinjaPhonetics
 import json
 from pathlib import Path
 import re
+import urllib.request
+import xml.etree.ElementTree as ET
 import streamlit as st
 import streamlit.components.v1 as components
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -81,32 +83,106 @@ def merge_into_sentences(raw_items: list[dict]) -> list[dict]:
     return merged
 
 
+def _fetch_via_innertube(video_id: str, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
+    """Fallback caption fetcher via YouTube Innertube Android client."""
+    payload = json.dumps({
+        "context": {
+            "client": {
+                "clientName": "ANDROID",
+                "clientVersion": "19.09.37",
+                "hl": "en",
+                "gl": "US",
+            }
+        },
+        "videoId": video_id,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    tracks = (
+        data.get("captions", {})
+        .get("playerCaptionsTracklistRenderer", {})
+        .get("captionTracks", [])
+    )
+    if not tracks:
+        raise RuntimeError("No caption tracks returned by Innertube")
+
+    chosen = None
+    for lang in languages:
+        for t in tracks:
+            if t.get("languageCode") == lang:
+                chosen = t
+                break
+        if chosen:
+            break
+    if not chosen:
+        for t in tracks:
+            if str(t.get("languageCode", "")).startswith("en"):
+                chosen = t
+                break
+    if not chosen:
+        chosen = tracks[0]
+
+    base_url = chosen["baseUrl"]
+    with urllib.request.urlopen(base_url, timeout=10) as xml_resp:
+        xml_bytes = xml_resp.read()
+
+    root = ET.fromstring(xml_bytes)
+    items = []
+    for elem in root.findall(".//text"):
+        start = float(elem.attrib.get("start", 0.0))
+        dur = float(elem.attrib.get("dur", 1.0))
+        txt = "".join(elem.itertext()).replace("\n", " ").strip()
+        if txt:
+            items.append({
+                "start": start,
+                "duration": dur,
+                "end": start + dur,
+                "text": txt,
+            })
+    if not items:
+        raise RuntimeError("Empty caption XML")
+    return merge_into_sentences(items)
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def fetch_transcript(video_id: str, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
-    if hasattr(YouTubeTranscriptApi, "fetch") or not hasattr(YouTubeTranscriptApi, "get_transcript"):
-        api = YouTubeTranscriptApi()
-        fetched = api.fetch(video_id, languages=list(languages))
-        items = [
-            {
-                "start": float(item.start),
-                "duration": float(item.duration),
-                "end": float(item.start + item.duration),
-                "text": item.text.replace("\n", " ").strip(),
-            }
-            for item in fetched
-        ]
-    else:
-        raw = YouTubeTranscriptApi.get_transcript(video_id, languages=list(languages))
-        items = [
-            {
-                "start": float(item["start"]),
-                "duration": float(item["duration"]),
-                "end": float(item["start"] + item["duration"]),
-                "text": item["text"].replace("\n", " ").strip(),
-            }
-            for item in raw
-        ]
-    return merge_into_sentences(items)
+    try:
+        if hasattr(YouTubeTranscriptApi, "fetch") or not hasattr(YouTubeTranscriptApi, "get_transcript"):
+            api = YouTubeTranscriptApi()
+            fetched = api.fetch(video_id, languages=list(languages))
+            items = [
+                {
+                    "start": float(item.start),
+                    "duration": float(item.duration),
+                    "end": float(item.start + item.duration),
+                    "text": item.text.replace("\n", " ").strip(),
+                }
+                for item in fetched
+            ]
+        else:
+            raw = YouTubeTranscriptApi.get_transcript(video_id, languages=list(languages))
+            items = [
+                {
+                    "start": float(item["start"]),
+                    "duration": float(item["duration"]),
+                    "end": float(item["start"] + item["duration"]),
+                    "text": item["text"].replace("\n", " ").strip(),
+                }
+                for item in raw
+            ]
+        return merge_into_sentences(items)
+    except Exception:
+        return _fetch_via_innertube(video_id, languages)
 
 
 HTML_TEMPLATE = r"""<!DOCTYPE html>
@@ -2796,7 +2872,6 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
 
 
 def parse_srt_text(raw_text: str) -> list[dict]:
-    """Parse standard .srt subtitle text into caption dicts."""
     blocks = re.split(r"\r?\n\r?\n+", raw_text.strip())
     items = []
     time_re = re.compile(
@@ -2872,26 +2947,30 @@ def render_ninja_listening() -> None:
         save_last_video_id(vid)
 
         captions = None
-        cloud_blocked = False
         try:
             with st.spinner("字幕取得中..."):
                 captions = fetch_transcript(vid)
-        except Exception as e:
-            err_str = str(e)
-            if "IpBlocked" in err_str or "RequestBlocked" in err_str or "cloud provider" in err_str:
-                cloud_blocked = True
-            else:
-                st.warning(f"自動字幕を取得できませんでした: {e}")
+        except Exception:
+            captions = None
 
         if captions is None:
-            if cloud_blocked:
-                st.info("☁️ Streamlit Cloud のサーバーIPが YouTube に制限されているため、SRTファイルを読み込むか字幕なし（URLのURLボタンから非表示可）で起動します。")
-            srt_file = st.file_uploader("SRT字幕ファイル (.srt) を選択（任意）", type=["srt", "txt"], key=f"srt_up_{vid}")
+            srt_file = st.file_uploader(
+                "☁️ クラウドIP制限のため自動字幕を取得できませんでした。SRTファイル (.srt) を読み込むか、そのまま再生できます",
+                type=["srt", "txt"],
+                key=f"srt_up_{vid}",
+            )
             if srt_file is not None:
                 captions = parse_srt_text(srt_file.read().decode("utf-8", errors="replace"))
             else:
-                # Fallback placeholder timeline so the YouTube player & speed/VAS trainer still launch
-                captions = [{"start": float(t), "duration": 10.0, "end": float(t + 10), "text": f"[{t // 60:02d}:{t % 60:02d}] (No transcript loaded — use Mark start / Mark end)"} for t in range(0, 3600, 10)]
+                captions = [
+                    {
+                        "start": float(t),
+                        "duration": 10.0,
+                        "end": float(t + 10),
+                        "text": f"[{t // 60:02d}:{t % 60:02d}] (No transcript — use Mark start / Mark end)",
+                    }
+                    for t in range(0, 3600, 10)
+                ]
 
         components.html(
             build_player_html(vid, captions, url.strip()),
