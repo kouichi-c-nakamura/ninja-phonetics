@@ -50,7 +50,8 @@ recordings/
 *.png
 !assets/
 !assets/favicon.png
-!assets/favicon_64.png
+!assets/shuriken_ice.png
+
 *.jpg
 *.jpeg
 
