@@ -8,6 +8,7 @@ import urllib.request
 import streamlit as st
 import streamlit.components.v1 as components
 from youtube_transcript_api import YouTubeTranscriptApi
+from ui_styles import _ICE_SHURIKEN_B64, get_ice_shuriken_img_tag
 
 STATE_FILE = Path.home() / ".ninja_listening_state.json"
 TRANSCRIPT_CACHE_DIR = Path.home() / ".ninja_listening_transcripts"
@@ -920,12 +921,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     cursor: pointer;
     transition: opacity 0.2s, background 0.14s;
   }
-  .run-btn svg {
-    width: 16px;
-    height: 16px;
-    fill: #ffffff;
-    flex-shrink: 0;
-    transition: transform 0.28s ease;
+  .run-btn span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
   }
   .run-btn:hover svg {
     transform: rotate(90deg);
@@ -1233,6 +1233,24 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .export-btn:hover {
     filter: brightness(1.1);
   }
+  .ninja-spin-hover {
+    transition: transform 0.2s ease;
+  }
+  button:hover .ninja-spin-hover,
+  .ninja-spin-hover:hover {
+    animation: ninja-shuriken-spin 0.85s linear infinite;
+  }
+  @keyframes ninja-shuriken-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  .ninja-spin-hover {
+    transition: transform 0.2s ease;
+  }
+  button:hover .ninja-spin-hover,
+  .ninja-spin-hover:hover {
+    animation: ninja-shuriken-spin 0.85s linear infinite;
+  }
 </style>
 </head>
 <body>
@@ -1299,10 +1317,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
     <div class="run-row">
       <button class="run-btn" onclick="runSequence(0)">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M12 0.5 L15.6 8.4 L23.5 12 L15.6 15.6 L12 23.5 L8.4 15.6 L0.5 12 L8.4 8.4 Z M12 8.8 A3.2 3.2 0 1 0 12 15.2 A3.2 3.2 0 1 0 12 8.8 Z"/>
-        </svg>
-        <span>Run sequence</span>
+        <span>__RUN_SEQ_SHURIKEN__ Run sequence</span>
       </button>
       <button class="stop-btn" onclick="stopSequence()">■ Stop</button>
       <button class="cfg-btn" data-tip="Customize or save named sequence" onclick="openModal()">⚙</button>
@@ -2221,9 +2236,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
       const spinDur = (1.2 / stItem.speed).toFixed(2) + "s";
       const rightAction = isCurrent
-        ? `<svg class="step-shuriken${awaitingVas ? ' paused' : ''}" style="--spin-dur:${spinDur};" viewBox="0 0 24 24" aria-hidden="true">
-             <path fill-rule="evenodd" clip-rule="evenodd" d="M12 0.5 L15.6 8.4 L23.5 12 L15.6 15.6 L12 23.5 L8.4 15.6 L0.5 12 L8.4 8.4 Z M12 8.8 A3.2 3.2 0 1 0 12 15.2 A3.2 3.2 0 1 0 12 8.8 Z"/>
-           </svg>`
+        ? `<img src="__SHURIKEN_DATA_URI__" class="step-shuriken${awaitingVas ? ' paused' : ''}" style="--spin-dur:${spinDur};width:18px;height:18px;" alt="" aria-hidden="true" />`
         : `<span style="font-size:11px;color:#64748b;text-align:right;">Tap to jump</span>`;
 
       row.innerHTML = `
@@ -2852,11 +2865,15 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
     safe_captions = json.dumps(captions, ensure_ascii=False).replace("</", "<\\/")
     safe_vid = json.dumps(video_id).replace("</", "<\\/")
     safe_url = json.dumps(source_url, ensure_ascii=False).replace("</", "<\\/")
+    shuriken_icon = get_ice_shuriken_img_tag(size_px=16, extra_class="ninja-spin-hover")
+    shuriken_uri = f"data:image/png;base64,{_ICE_SHURIKEN_B64}" if _ICE_SHURIKEN_B64 else ""
     return (
         HTML_TEMPLATE
         .replace("__CAPTIONS_JSON__", safe_captions)
         .replace("__VIDEO_ID_JSON__", safe_vid)
         .replace("__SOURCE_URL_JSON__", safe_url)
+        .replace("__RUN_SEQ_SHURIKEN__", shuriken_icon)
+        .replace("__SHURIKEN_DATA_URI__", shuriken_uri)
     )
 
 

@@ -124,6 +124,34 @@ header[data-testid="stHeader"] {{
     font-weight: 700 !important;
     box-shadow: 0 2px 8px rgba(56, 189, 248, 0.15) !important;
 }}
+
+/* アクティブボタンの文字列 (<p>) の直前にだけ青白い手裏剣を1つ表示 */
+div.stButton > button[kind="primary"] p,
+div.stButton > button[data-testid="baseButton-primary"] p,
+div.stButton > button[data-testid="stBaseButton-primary"] p {{
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 7px !important;
+}}
+div.stButton > button[kind="primary"] p::before,
+div.stButton > button[data-testid="baseButton-primary"] p::before,
+div.stButton > button[data-testid="stBaseButton-primary"] p::before {{
+    content: "";
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    {_ACTIVE_BTN_ICON_RULE}
+}}
+
+/* ホバー時に手裏剣をクルクル回転 */
+div.stButton > button[kind="primary"]:hover p::before,
+div.stButton > button[data-testid="baseButton-primary"]:hover p::before,
+div.stButton > button[data-testid="stBaseButton-primary"]:hover p::before {{
+    animation: ninja-shuriken-spin 0.85s linear infinite;
+}}
+
 div[data-testid="stAudioInput"] {{
     background: #0F172A;
     border: 1px solid #1E293B;
@@ -160,27 +188,6 @@ div[data-testid="stTextArea"] textarea {{
 @keyframes ninja-shuriken-spin {{
     from {{ transform: rotate(0deg); }}
     to   {{ transform: rotate(360deg); }}
-}}
-
-/* アクティブタブボタン (kind="primary") の先頭に青白い手裏剣アイコンを表示 */
-div.stButton > button[kind="primary"]::before,
-div.stButton > button[data-testid="baseButton-primary"]::before,
-div.stButton > button[data-testid="stBaseButton-primary"]::before {{
-    content: "";
-    display: inline-block;
-    width: 19px;
-    height: 19px;
-    margin-right: 7px;
-    vertical-align: -3px;
-    flex-shrink: 0;
-    {_ACTIVE_BTN_ICON_RULE}
-}}
-
-/* ホバー時にアクティブタブの手裏剣をクルクル回転 */
-div.stButton > button[kind="primary"]:hover::before,
-div.stButton > button[data-testid="baseButton-primary"]:hover::before,
-div.stButton > button[data-testid="stBaseButton-primary"]:hover::before {{
-    animation: ninja-shuriken-spin 0.85s linear infinite;
 }}
 
 /* ブランドバーや見出し内の手裏剣もホバーで回転 */
