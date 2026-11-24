@@ -28,7 +28,12 @@ from views_b1 import build_b1_scope_html
 from views_e2 import build_e2_multiview_canvas_html, build_clickable_word_map_html
 from views_listening import render_ninja_listening
 
-st.set_page_config(page_title="NinjaPhonetics: Biofeedback Scope", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="NinjaPhonetics",
+    page_icon="assets/favicon.png",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 st.markdown(APP_CUSTOM_CSS, unsafe_allow_html=True)
 
 VALID_MODES = {"RL", "SIBILANT", "RHYTHM", "LISTENING"}

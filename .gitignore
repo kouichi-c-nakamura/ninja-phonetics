@@ -48,6 +48,9 @@ recordings/
 *.html
 !templates/*.html
 *.png
+!assets/
+!assets/favicon.png
+!assets/favicon_64.png
 *.jpg
 *.jpeg
 
