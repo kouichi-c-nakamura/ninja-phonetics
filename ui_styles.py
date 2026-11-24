@@ -1,22 +1,27 @@
 """
 ui_styles.py: ブランドアイコン & 包括的ダークテーマCSS定義
 """
-import os
 import base64
+from pathlib import Path
 
-def get_shuriken_icon_html(size_px: int = 28) -> str:
-    for fname in ["pink shuriken 32.png", "pink shuriken 640.jpg", "assets/pink shuriken 32.png"]:
-        if os.path.exists(fname):
-            with open(fname, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode("utf-8")
-            mime = "image/png" if fname.endswith(".png") else "image/jpeg"
-            return (
-                f'<img src="data:{mime};base64,{b64}" width="{size_px}" height="{size_px}" '
-                f'style="filter: hue-rotate(190deg) saturate(0.28) brightness(1.65) contrast(1.15) '
-                f'drop-shadow(0 0 6px rgba(186, 230, 253, 0.55)); vertical-align: middle; border-radius: 4px;" />'
-            )
+_ICE_SHURIKEN_PATH = Path("assets/shuriken_ice.png")
+_ICE_SHURIKEN_B64 = (
+    base64.b64encode(_ICE_SHURIKEN_PATH.read_bytes()).decode("ascii")
+    if _ICE_SHURIKEN_PATH.exists()
+    else ""
+)
+
+
+def get_ice_shuriken_img_tag(size_px: int = 22, extra_class: str = "ninja-spin-hover") -> str:
+    if _ICE_SHURIKEN_B64:
+        return (
+            f'<img src="data:image/png;base64,{_ICE_SHURIKEN_B64}" class="{extra_class}" '
+            f'style="width:{size_px}px;height:{size_px}px;vertical-align:middle;'
+            f'display:inline-block;flex-shrink:0;" />'
+        )
     return (
-        f'<svg width="{size_px}" height="{size_px}" viewBox="0 0 64 64" style="filter: drop-shadow(0 0 5px rgba(186, 230, 253, 0.5)); vertical-align: middle;">'
+        f'<svg class="{extra_class}" width="{size_px}" height="{size_px}" viewBox="0 0 64 64" '
+        f'style="filter: drop-shadow(0 0 5px rgba(186, 230, 253, 0.5)); vertical-align: middle; flex-shrink: 0;">'
         f'<defs><linearGradient id="iceBlade" x1="0%" y1="0%" x2="100%" y2="100%">'
         f'<stop offset="0%" stop-color="#F8FAFC"/><stop offset="55%" stop-color="#BAE6FD"/><stop offset="100%" stop-color="#38BDF8"/>'
         f'</linearGradient></defs>'
@@ -25,48 +30,65 @@ def get_shuriken_icon_html(size_px: int = 28) -> str:
         f'</svg>'
     )
 
-SHURIKEN_ICON_MAIN = get_shuriken_icon_html(28)
-SHURIKEN_ICON_SM = get_shuriken_icon_html(16)
 
-APP_CUSTOM_CSS = """<style>
-:root {
+SHURIKEN_ICON_MAIN = get_ice_shuriken_img_tag(28, "ninja-spin-hover")
+SHURIKEN_ICON_SM = get_ice_shuriken_img_tag(18, "ninja-spin-hover")
+
+_ACTIVE_BTN_ICON_RULE = (
+    f'background-image: url("data:image/png;base64,{_ICE_SHURIKEN_B64}");'
+    f'background-size: contain;'
+    f'background-repeat: no-repeat;'
+    f'background-position: center;'
+    if _ICE_SHURIKEN_B64
+    else (
+        'background-color: #BAE6FD;'
+        '-webkit-mask-image: url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill-rule="evenodd" d="M50 0 C50 30 70 50 100 50 C70 50 50 70 50 100 C50 70 30 50 0 50 C30 50 50 30 50 0 Z M50 42 A8 8 0 1 0 50 58 A8 8 0 1 0 50 42 Z"/></svg>\');'
+        'mask-image: url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill-rule="evenodd" d="M50 0 C50 30 70 50 100 50 C70 50 50 70 50 100 C50 70 30 50 0 50 C30 50 50 30 50 0 Z M50 42 A8 8 0 1 0 50 58 A8 8 0 1 0 50 42 Z"/></svg>\');'
+        '-webkit-mask-size: contain; mask-size: contain;'
+        '-webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;'
+        '-webkit-mask-position: center; mask-position: center;'
+    )
+)
+
+APP_CUSTOM_CSS = f"""<style>
+:root {{
     --ice-white: #F0F9FF;
     --ice-cyan: #BAE6FD;
     --accent-blue: #38BDF8;
     --bg-dark: #090D16;
     --bg-card: #0F172A;
     --border-muted: #1E293B;
-}
-html, body, [data-testid="stAppViewContainer"], .stApp {
+}}
+html, body, [data-testid="stAppViewContainer"], .stApp {{
     background-color: #090D16 !important;
     color: #F8FAFC !important;
-}
-header[data-testid="stHeader"] {
+}}
+header[data-testid="stHeader"] {{
     height: 1.8rem !important;
     background: transparent !important;
-}
-.block-container {
+}}
+.block-container {{
     padding-top: 1.2rem !important;
     padding-bottom: 0.8rem !important;
     padding-left: 1.5rem !important;
     padding-right: 1.5rem !important;
-}
-.brand-bar {
+}}
+.brand-bar {{
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 6px 0 10px 0;
     margin-bottom: 8px;
     border-bottom: 1px solid #1E293B;
-}
-.brand-title {
+}}
+.brand-title {{
     font-size: 1.4rem;
     font-weight: 800;
     color: #F8FAFC;
     letter-spacing: -0.02em;
     margin: 0;
-}
-.brand-sub {
+}}
+.brand-sub {{
     font-size: 0.72rem;
     font-weight: 700;
     color: #BAE6FD;
@@ -75,8 +97,8 @@ header[data-testid="stHeader"] {
     padding: 2px 8px;
     border-radius: 4px;
     letter-spacing: 0.05em;
-}
-.stButton button {
+}}
+.stButton button {{
     background-color: #0F172A !important;
     color: #94A3B8 !important;
     border: 1px solid #1E293B !important;
@@ -86,36 +108,37 @@ header[data-testid="stHeader"] {
     border-radius: 6px 6px 2px 2px !important;
     font-size: 0.86rem !important;
     transition: all 0.15s ease !important;
-}
-.stButton button:hover {
+}}
+.stButton button:hover {{
     background-color: #1E293B !important;
     color: #F0F9FF !important;
     border-color: #334155 !important;
-}
+}}
 .stButton button[kind="primary"],
-.stButton button[data-testid="baseButton-primary"] {
+.stButton button[data-testid="baseButton-primary"],
+.stButton button[data-testid="stBaseButton-primary"] {{
     background-color: #172554 !important;
     color: #F0F9FF !important;
     border-color: #1E3A8A !important;
     border-bottom: 2.5px solid #BAE6FD !important;
     font-weight: 700 !important;
     box-shadow: 0 2px 8px rgba(56, 189, 248, 0.15) !important;
-}
-div[data-testid="stAudioInput"] {
+}}
+div[data-testid="stAudioInput"] {{
     background: #0F172A;
     border: 1px solid #1E293B;
     border-radius: 8px;
     padding: 4px 12px;
     margin-bottom: 0.4rem;
-}
-div[data-testid="stFileUploader"] {
+}}
+div[data-testid="stFileUploader"] {{
     background: #0F172A !important;
     border: 1px dashed #334155 !important;
     border-radius: 8px !important;
     padding: 6px !important;
     margin-bottom: 0.4rem !important;
-}
-div[data-testid="stTextArea"] textarea {
+}}
+div[data-testid="stTextArea"] textarea {{
     background-color: #090D16 !important;
     color: #F8FAFC !important;
     border: 1px solid #1E293B !important;
@@ -123,8 +146,8 @@ div[data-testid="stTextArea"] textarea {
     font-weight: 500 !important;
     border-radius: 6px !important;
     line-height: 1.5 !important;
-}
-.sec-header {
+}}
+.sec-header {{
     display: flex;
     align-items: center;
     gap: 8px;
@@ -132,24 +155,45 @@ div[data-testid="stTextArea"] textarea {
     font-weight: 700;
     color: #F0F9FF;
     margin-bottom: 8px;
-}
-/* アクティブなタブボタン (kind="primary") の先頭に手裏剣アイコンを表示 */
-div.stButton > button[kind="primary"]::before {
+}}
+
+@keyframes ninja-shuriken-spin {{
+    from {{ transform: rotate(0deg); }}
+    to   {{ transform: rotate(360deg); }}
+}}
+
+/* アクティブタブボタン (kind="primary") の先頭に青白い手裏剣アイコンを表示 */
+div.stButton > button[kind="primary"]::before,
+div.stButton > button[data-testid="baseButton-primary"]::before,
+div.stButton > button[data-testid="stBaseButton-primary"]::before {{
     content: "";
     display: inline-block;
-    width: 20px;
-    height: 20px;
-    margin-right: 6px;
-    vertical-align: -1.5px;
-    background-color: #BAE6FD; /* ペールホワイト〜淡い水色 */
-    /* 中央に穴が開いた4方手裏剣のベクターマスク */
-    -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill-rule="evenodd" d="M50 0 C50 30 70 50 100 50 C70 50 50 70 50 100 C50 70 30 50 0 50 C30 50 50 30 50 0 Z M50 42 A8 8 0 1 0 50 58 A8 8 0 1 0 50 42 Z"/></svg>');
-    mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path fill-rule="evenodd" d="M50 0 C50 30 70 50 100 50 C70 50 50 70 50 100 C50 70 30 50 0 50 C30 50 50 30 50 0 Z M50 42 A8 8 0 1 0 50 58 A8 8 0 1 0 50 42 Z"/></svg>');
-    -webkit-mask-size: contain;
-    mask-size: contain;
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-    -webkit-mask-position: center;
-    mask-position: center;
-}
+    width: 19px;
+    height: 19px;
+    margin-right: 7px;
+    vertical-align: -3px;
+    flex-shrink: 0;
+    {_ACTIVE_BTN_ICON_RULE}
+}}
+
+/* ホバー時にアクティブタブの手裏剣をクルクル回転 */
+div.stButton > button[kind="primary"]:hover::before,
+div.stButton > button[data-testid="baseButton-primary"]:hover::before,
+div.stButton > button[data-testid="stBaseButton-primary"]:hover::before {{
+    animation: ninja-shuriken-spin 0.85s linear infinite;
+}}
+
+/* ブランドバーや見出し内の手裏剣もホバーで回転 */
+.ninja-spin-hover {{
+    transition: transform 0.2s ease;
+}}
+.brand-bar:hover .ninja-spin-hover,
+.sec-header:hover .ninja-spin-hover,
+.ninja-spin-hover:hover {{
+    animation: ninja-shuriken-spin 0.85s linear infinite;
+}}
+
+.ninja-spin-always {{
+    animation: ninja-shuriken-spin 2.4s linear infinite;
+}}
 </style>"""

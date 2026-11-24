@@ -3,6 +3,8 @@ app.py: NinjaPhonetics Biofeedback Scope
 """
 import os
 import re
+import base64
+from pathlib import Path
 import soundfile as sf
 import streamlit as st
 import streamlit.components.v1 as components
@@ -35,6 +37,13 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 st.markdown(APP_CUSTOM_CSS, unsafe_allow_html=True)
+
+_ice_shuriken_path = Path("assets/shuriken_ice.png")
+_ICE_SHURIKEN_B64 = (
+    base64.b64encode(_ice_shuriken_path.read_bytes()).decode("ascii")
+    if _ice_shuriken_path.exists()
+    else ""
+)
 
 VALID_MODES = {"RL", "SIBILANT", "RHYTHM", "LISTENING"}
 
@@ -103,6 +112,30 @@ st.markdown(
     f"""
     <style>
     header[data-testid="stHeader"] {{ display: none; }}
+    /* アクティブタブ（type="primary"）の左端に青白い手裏剣を表示し、ホバーでクルクル回す */
+    button[kind="primary"] p,
+    button[data-testid="stBaseButton-primary"] p {{
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 7px !important;
+    }}
+    button[kind="primary"] p::before,
+    button[data-testid="stBaseButton-primary"] p::before {{
+        content: "";
+        display: inline-block;
+        width: 17px;
+        height: 17px;
+        flex-shrink: 0;
+        background-image: url("data:image/png;base64,{_ICE_SHURIKEN_B64}");
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: center;
+    }}
+    button[kind="primary"]:hover p::before,
+    button[data-testid="stBaseButton-primary"]:hover p::before {{
+        animation: ninja-shuriken-rotate 0.85s linear infinite;
+    }}
     .block-container {{
         padding-top: 0.35rem !important;
         padding-bottom: 0.2rem !important;
