@@ -10,29 +10,7 @@ import streamlit.components.v1 as components
 from youtube_transcript_api import YouTubeTranscriptApi
 from ui_styles import _ICE_SHURIKEN_B64, get_ice_shuriken_img_tag
 
-STATE_FILE = Path.home() / ".ninja_listening_state.json"
 TRANSCRIPT_CACHE_DIR = Path.home() / ".ninja_listening_transcripts"
-
-
-def load_last_video_id() -> str:
-    try:
-        if STATE_FILE.exists():
-            data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-            return str(data.get("last_video_id", "")).strip()
-    except Exception:
-        pass
-    return ""
-
-
-def save_last_video_id(video_id: str) -> None:
-    try:
-        STATE_FILE.write_text(
-            json.dumps({"last_video_id": video_id}),
-            encoding="utf-8",
-        )
-    except Exception:
-        pass
-
 
 def load_cached_transcript(video_id: str) -> list[dict] | None:
     try:
@@ -1399,7 +1377,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   let urlBarManuallyVisible = false;
 
+  const LAST_VIDEO_KEY = "ninja_last_video_id_v1";
+
   try {
+    if (videoId) {
+      localStorage.setItem(LAST_VIDEO_KEY, videoId);
+    }
     if (window.parent && window.parent.history && videoId) {
       const parentUrl = new URL(window.parent.location.href);
       let changed = false;
@@ -2896,8 +2879,29 @@ def render_ninja_listening() -> None:
     default_v = (
         st.query_params.get("v", "")
         or st.session_state.get("ninja_last_video_id", "")
-        or load_last_video_id()
     )
+
+    # Restore the current browser's own last video from localStorage if ?v= is empty
+    if not default_v:
+        components.html(
+            """
+            <script>
+            try {
+              const savedVid = localStorage.getItem("ninja_last_video_id_v1");
+              if (savedVid && /^[A-Za-z0-9_-]{11}$/.test(savedVid) && window.parent) {
+                const u = new URL(window.parent.location.href);
+                if (!u.searchParams.get("v")) {
+                  u.searchParams.set("v", savedVid);
+                  u.searchParams.set("mode", "LISTENING");
+                  window.parent.location.replace(u.toString());
+                }
+              }
+            } catch (e) {}
+            </script>
+            """,
+            height=0,
+        )
+
     default_url = f"https://youtu.be/{default_v}" if default_v else ""
 
     url = st.text_input(
@@ -2917,7 +2921,6 @@ def render_ninja_listening() -> None:
         if st.query_params.get("v") != vid:
             st.query_params["v"] = vid
         st.session_state["ninja_last_video_id"] = vid
-        save_last_video_id(vid)
 
         captions = load_cached_transcript(vid)
         if captions is None:
