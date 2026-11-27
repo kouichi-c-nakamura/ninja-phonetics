@@ -56,6 +56,8 @@ if "last_recorded_bytes" not in st.session_state: st.session_state.last_recorded
 if "auto_play" not in st.session_state: st.session_state.auto_play = False
 
 # B1 セッション状態初期化
+if "a1_presets_open" not in st.session_state: st.session_state.a1_presets_open = True
+if "b1_presets_open" not in st.session_state: st.session_state.b1_presets_open = True
 if "b1_word_label" not in st.session_state: st.session_state.b1_word_label = "お手本: See (US)"
 if "b1_target_word" not in st.session_state: st.session_state.b1_target_word = "see"
 if "b1_word_audio_bytes" not in st.session_state:
@@ -109,44 +111,30 @@ st.markdown(
     }}
     /* PC (>=640px) ではスマホ用プルダウンハンドルを隠す */
     @media (min-width: 640px) {{
-        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle),
-        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div {{
+        div[data-testid="stElementContainer"]:has(#a1-preset-drawer-handle),
+        div[data-testid="stElementContainer"]:has(#a1-preset-drawer-handle) + div,
+        div[data-testid="stElementContainer"]:has(#b1-preset-drawer-handle),
+        div[data-testid="stElementContainer"]:has(#b1-preset-drawer-handle) + div {{
             display: none !important;
         }}
     }}
-    /* スマホ (<=639px) の余白詰め＆プルダウンハンドル */
     @media (max-width: 639px) {{
-        .block-container {{
-            padding-top: 0.1rem !important;
-            padding-left: 0.35rem !important;
-            padding-right: 0.35rem !important;
-        }}
-        div[data-testid="stVerticalBlock"] {{
-            gap: 0.15rem !important;
-        }}
-        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) {{
+        div[data-testid="stElementContainer"]:has(#a1-preset-drawer-handle),
+        div[data-testid="stElementContainer"]:has(#b1-preset-drawer-handle) {{
             display: none !important;
         }}
-        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button {{
-            min-height: 36px !important;
-            height: 36px !important;
-            padding: 0 16px !important;
-            font-size: 22px !important;
+        div[data-testid="stElementContainer"]:has(#a1-preset-drawer-handle) + div button,
+        div[data-testid="stElementContainer"]:has(#b1-preset-drawer-handle) + div button {{
+            min-height: 28px !important;
+            height: 28px !important;
+            padding: 0 12px !important;
+            font-size: 16px !important;
             line-height: 1 !important;
-            color: #94a3b8 !important;
-            background: rgba(30, 41, 59, 0.75) !important;
-            border: 1px solid #334155 !important;
-            border-top: none !important;
-            border-radius: 0 0 12px 12px !important;
-            margin: 0 !important;
-        }}
-        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button p {{
-            font-size: 22px !important;
-            line-height: 1 !important;
-        }}
-        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button:hover {{
-            color: #f8fafc !important;
-            border-color: #38bdf8 !important;
+            color: #38bdf8 !important;
+            background: rgba(15, 23, 42, 0.85) !important;
+            border: 1px solid #1e293b !important;
+            border-radius: 6px !important;
+            margin: 2px 0 !important;
         }}
     }}
     {hide_mobile_nav_css}
@@ -204,27 +192,35 @@ st.markdown('<span id="mode-body-anchor" style="display:none;"></span>', unsafe_
 # A1 モード
 # -------------------------------------------------------------
 if st.session_state.app_mode == "RL":
-    cols = st.columns(len(PRESETS))
+    st.markdown('<span id="a1-preset-drawer-handle" style="display:none;"></span>', unsafe_allow_html=True)
+    a1_drawer_label = f"▲ 単語プリセットを隠す ({st.session_state.current_label})" if st.session_state.a1_presets_open else f"▼ 単語プリセットを選択 ({st.session_state.current_label})"
+    if st.button(a1_drawer_label, key="a1_preset_drawer_btn", use_container_width=True):
+        st.session_state.a1_presets_open = not st.session_state.a1_presets_open
+        st.rerun()
+
+    active_preset_info = next(
+        (p for p in PRESETS if st.session_state.current_label == f"お手本: {p['label']}"),
+        None,
+    )
     preset_clicked = False
-    active_preset_info = None
 
-    for idx, col in enumerate(cols):
-        p_info = PRESETS[idx]
-        is_active = (st.session_state.current_label == f"お手本: {p_info['label']}")
-        if is_active:
-            active_preset_info = p_info
-
-        if col.button(p_info["label"], type="primary" if is_active else "secondary", use_container_width=True):
-            fpath = os.path.join(PRESET_DIR, p_info["file"])
-            if os.path.exists(fpath):
-                with open(fpath, "rb") as f:
-                    st.session_state.current_audio_bytes = f.read()
-                    st.session_state.current_label = f"お手本: {p_info['label']}"
-                    st.session_state.a1_target_word = p_info.get("target_word", "right")
-                    st.session_state["a1_word_input"] = st.session_state.a1_target_word
-                    st.session_state.auto_play = True
-                preset_clicked = True
-                st.rerun()
+    if st.session_state.a1_presets_open:
+        cols = st.columns(len(PRESETS))
+        for idx, col in enumerate(cols):
+            p_info = PRESETS[idx]
+            is_active = (st.session_state.current_label == f"お手本: {p_info['label']}")
+            if col.button(p_info["label"], type="primary" if is_active else "secondary", use_container_width=True):
+                fpath = os.path.join(PRESET_DIR, p_info["file"])
+                if os.path.exists(fpath):
+                    with open(fpath, "rb") as f:
+                        st.session_state.current_audio_bytes = f.read()
+                        st.session_state.current_label = f"お手本: {p_info['label']}"
+                        st.session_state.a1_target_word = p_info.get("target_word", "right")
+                        st.session_state["a1_word_input"] = st.session_state.a1_target_word
+                        st.session_state.auto_play = True
+                        st.session_state.a1_presets_open = False
+                    preset_clicked = True
+                    st.rerun()
 
     in_col1, in_col2 = st.columns([1.3, 2.7], vertical_alignment="bottom")
     with in_col1:
@@ -295,10 +291,20 @@ elif st.session_state.app_mode == "SIBILANT":
         row1_presets = B1_WORD_PRESETS[:9]   # US / UK 英語 9種
         row2_presets = B1_WORD_PRESETS[9:]   # JP カタカナトラップ 4種
 
-        b1_preset_clicked = False
-        active_b1_info = None
+        st.markdown('<span id="b1-preset-drawer-handle" style="display:none;"></span>', unsafe_allow_html=True)
+        b1_drawer_label = f"▲ 単語プリセットを隠す ({st.session_state.b1_word_label})" if st.session_state.b1_presets_open else f"▼ 単語プリセットを選択 ({st.session_state.b1_word_label})"
+        if st.button(b1_drawer_label, key="b1_preset_drawer_btn", use_container_width=True):
+            st.session_state.b1_presets_open = not st.session_state.b1_presets_open
+            st.rerun()
 
-        cols_r1 = st.columns(len(row1_presets))
+        b1_preset_clicked = False
+        active_b1_info = next(
+            (p for p in B1_WORD_PRESETS if st.session_state.b1_word_label == f"お手本: {p['label']}"),
+            None,
+        )
+
+        if st.session_state.b1_presets_open:
+            cols_r1 = st.columns(len(row1_presets))
         for idx, col in enumerate(cols_r1):
             p_info = row1_presets[idx]
             is_act = (st.session_state.b1_word_label == f"お手本: {p_info['label']}")

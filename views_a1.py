@@ -22,6 +22,7 @@ def build_spike2_html(data: dict, auto_play: bool = False, export_name: str = "s
     display: flex; align-items: center; gap: 10px;
     padding: 8px 14px; background: #0F172A;
     border: 1px solid #1E293B; border-radius: 8px 8px 0 0;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
   }}
   button {{
     font-family: inherit; font-size: 13px; font-weight: bold;
@@ -44,10 +45,19 @@ def build_spike2_html(data: dict, auto_play: bool = False, export_name: str = "s
     font-family: inherit; font-size: 13px; font-weight: 500; margin-left: auto;
     font-variant-numeric: tabular-nums; color: #E2E8F0; white-space: nowrap;
   }}
-  #scope-wrapper {{
-    position: relative; width: 100%; height: 530px;
-    border: 1px solid #1E293B; border-top: none; background: #090D16;
+  #scope-scroll-box {{
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid #1E293B;
+    border-top: none;
     border-radius: 0 0 8px 8px;
+    background: #090D16;
+  }}
+  #scope-wrapper {{
+    position: relative; width: 100%; min-width: 820px; height: 530px;
+    background: #090D16;
   }}
   canvas {{ position: absolute; left: 0; top: 0; width: 100%; height: 100%; }}
   #overlay-canvas {{ mix-blend-mode: screen; }}
@@ -71,9 +81,11 @@ def build_spike2_html(data: dict, auto_play: bool = False, export_name: str = "s
   <button id="btn-dl-audio">🔊 Audio (.wav)</button>
   <div class="readout" id="time-readout">Cursor: 0.000 s</div>
 </div>
-<div id="scope-wrapper">
-  <canvas id="bg-canvas"></canvas>
-  <canvas id="overlay-canvas"></canvas>
+<div id="scope-scroll-box">
+  <div id="scope-wrapper">
+    <canvas id="bg-canvas"></canvas>
+    <canvas id="overlay-canvas"></canvas>
+  </div>
 </div>
 <script>
 const D = {data_json};
@@ -165,7 +177,6 @@ function drawPhonemeAnnotations(panels, plotW, APP_FONT) {{
   const tierH = 24;
 
   bgCtx.save();
-  // 全3パネルに境界縦破線を描画
   panels.forEach((p) => {{
     bgCtx.save();
     bgCtx.beginPath(); bgCtx.rect(MARGIN.left, p.top, plotW, p.height); bgCtx.clip();
@@ -190,7 +201,6 @@ function drawPhonemeAnnotations(panels, plotW, APP_FONT) {{
     bgCtx.restore();
   }});
 
-  // 第2パネル (Spectrogram / F2&F3) の最上部に音素ラベル帯を描画
   bgCtx.save();
   bgCtx.beginPath(); bgCtx.rect(MARGIN.left, p2.top, plotW, p2.height); bgCtx.clip();
 
@@ -215,7 +225,6 @@ function drawPhonemeAnnotations(panels, plotW, APP_FONT) {{
     bgCtx.lineWidth = 1.2;
     bgCtx.strokeRect(sx, p2.top, segW, tierH);
 
-    // 音素IPAラベル
     bgCtx.fillStyle = txtCol;
     bgCtx.font = (segW > 26 ? "bold 14px " : "bold 11px ") + APP_FONT;
     bgCtx.textAlign = "center";
@@ -319,7 +328,6 @@ function drawBackground() {{
     bgCtx.fillText(hz.toString(), MARGIN.left - 8, y);
   }});
 
-  // Ch3 R STRIKE ZONE (<1000Hz)
   const yTarget = valToY(1000, dMin, dMax, p3);
   const yZero = valToY(0, dMin, dMax, p3);
   bgCtx.save();
@@ -337,10 +345,8 @@ function drawBackground() {{
   drawSeries(D.times, D.delta, dMin, dMax, p3, "#F59E0B", 3.2);
   bgCtx.restore();
 
-  // 音素セグメンテーション描画 (縦破線 + IPAラベル帯)
   drawPhonemeAnnotations(panels, plotW, APP_FONT);
 
-  // Ch2 凡例 (音素帯と重ならないよう下げる)
   const legendX = W - MARGIN.right - 85;
   const leg2Top = (showPhonemes && D.phonemes && D.phonemes.length > 0) ? (p2.top + 30) : (p2.top + 6);
   bgCtx.fillStyle = "rgba(9, 13, 22, 0.85)";
@@ -357,7 +363,6 @@ function drawBackground() {{
   bgCtx.beginPath(); bgCtx.moveTo(legendX, leg2Top + 30); bgCtx.lineTo(legendX + 18, leg2Top + 30); bgCtx.stroke();
   bgCtx.fillStyle = "#10B981"; bgCtx.fillText("F2", legendX + 24, leg2Top + 30);
 
-  // Ch3 凡例
   const leg3X = W - MARGIN.right - 140;
   bgCtx.fillStyle = "rgba(9, 13, 22, 0.85)"; bgCtx.fillRect(leg3X - 8, p3.top + 6, 136, 26);
   bgCtx.strokeStyle = "#1E293B"; bgCtx.lineWidth = 1.0;
@@ -509,7 +514,6 @@ ovCanvas.addEventListener("mousedown", (e) => {{
   const clickT = xToT(mouseX);
   const panels = getPanels();
 
-  // 第2パネル上端の音素ラベル帯をクリックした場合は、その音素区間を選択して先頭へ移動
   if (showPhonemes && D.phonemes && mouseY >= panels[1].top && mouseY <= panels[1].top + 24) {{
     const hitPh = D.phonemes.find(s => clickT >= s.start && clickT <= s.end);
     if (hitPh) {{
