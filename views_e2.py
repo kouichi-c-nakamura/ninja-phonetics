@@ -71,13 +71,13 @@ def build_e2_multiview_canvas_html(passage_key: str, eval_history: list = None, 
 
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 body {{ margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", sans-serif; background: #0B0F19; color: #E2E8F0; user-select: none; overflow: hidden; }}
-.toolbar {{ display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: #0F172A; border: 1px solid #1E293B; border-radius: 8px 8px 0 0; }}
-.toolbar-title {{ font-size: 13px; font-weight: 700; color: #BAE6FD; }}
-.btn-group {{ display: flex; align-items: center; gap: 8px; }}
-button {{ font-family: inherit; font-size: 12px; font-weight: bold; padding: 4px 11px; border-radius: 5px; border: 1px solid #334155; cursor: pointer; background: #1E293B; color: #E2E8F0; }}
+.toolbar {{ display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; background: #0F172A; border: 1px solid #1E293B; border-radius: 8px 8px 0 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }}
+.toolbar-title {{ font-size: 13px; font-weight: 700; color: #BAE6FD; white-space: nowrap; }}
+.btn-group {{ display: flex; align-items: center; gap: 8px; flex-shrink: 0; }}
+button {{ font-family: inherit; font-size: 12px; font-weight: bold; padding: 4px 11px; border-radius: 5px; border: 1px solid #334155; cursor: pointer; background: #1E293B; color: #E2E8F0; white-space: nowrap; }}
 button:hover {{ background: #334155; color: #FFFFFF; }}
 button.toggle-active {{ background: #172554; color: #BAE6FD; border-color: #38BDF8; }}
-.scroll-container {{ position: relative; width: 100%; height: 420px; background: #090D16; border: 1px solid #1E293B; border-top: none; border-radius: 0 0 8px 8px; overflow-x: auto; overflow-y: hidden; }}
+.scroll-container {{ position: relative; width: 100%; height: 420px; background: #090D16; border: 1px solid #1E293B; border-top: none; border-radius: 0 0 8px 8px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }}
 .scroll-container::-webkit-scrollbar {{ height: 8px; }}
 .scroll-container::-webkit-scrollbar-track {{ background: #090D16; }}
 .scroll-container::-webkit-scrollbar-thumb {{ background: #334155; border-radius: 4px; }}
@@ -153,6 +153,8 @@ function draw() {{
     minWidth = Math.max(clientW, wordsCount * 140 + 80);
   }} else if (isMetrics1D) {{
     minWidth = Math.max(clientW, 700);
+  }} else {{
+    minWidth = Math.max(clientW, 680);
   }}
 
   const W = minWidth;

@@ -23,6 +23,21 @@ def build_b1_scope_html(data: dict, auto_play: bool = False, export_name: str = 
     display: flex; align-items: center; gap: 10px;
     padding: 8px 14px; background: #0F172A;
     border: 1px solid #1E293B; border-radius: 8px 8px 0 0;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }}
+  #scope-scroll-box {{
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid #1E293B;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    background: #090D16;
+  }}
+  #scope-wrapper {{
+    position: relative; width: 100%; min-width: 820px; height: {scope_height}px;
+    background: #090D16;
   }}
   button {{
     font-family: inherit; font-size: 13px; font-weight: bold;
@@ -72,9 +87,11 @@ def build_b1_scope_html(data: dict, auto_play: bool = False, export_name: str = 
   <button id="btn-dl-audio">🔊 Audio (.wav)</button>
   <div class="readout" id="time-readout">Cursor: 0.000 s</div>
 </div>
-<div id="scope-wrapper">
-  <canvas id="bg-canvas"></canvas>
-  <canvas id="overlay-canvas"></canvas>
+<div id="scope-scroll-box">
+  <div id="scope-wrapper">
+    <canvas id="bg-canvas"></canvas>
+    <canvas id="overlay-canvas"></canvas>
+  </div>
 </div>
 <script>
 const D = {data_json};
