@@ -56,7 +56,9 @@ if "last_recorded_bytes" not in st.session_state: st.session_state.last_recorded
 if "auto_play" not in st.session_state: st.session_state.auto_play = False
 
 # B1 セッション状態初期化
+if "a1_presets_open" not in st.session_state: st.session_state.a1_presets_open = True
 if "b1_presets_open" not in st.session_state: st.session_state.b1_presets_open = True
+if "e2_passages_open" not in st.session_state: st.session_state.e2_passages_open = True
 if "b1_word_label" not in st.session_state: st.session_state.b1_word_label = "お手本: See (US)"
 if "b1_target_word" not in st.session_state: st.session_state.b1_target_word = "see"
 if "b1_word_audio_bytes" not in st.session_state:
@@ -107,7 +109,7 @@ st.markdown(
         padding-top: 0.35rem !important;
         padding-bottom: 0.2rem !important;
     }}
-    /* PC (>=640px) ではスマホ用プルダウンハンドル（第1階層・第2階層とも）を隠す */
+    /* PC (>=640px) ではスマホ用プルダウンハンドル（第1・第2階層とも）を隠す */
     @media (min-width: 640px) {{
         div[data-testid="stElementContainer"]:has(#mobile-drawer-handle),
         div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div,
@@ -120,7 +122,7 @@ st.markdown(
             display: none !important;
         }}
     }}
-    /* スマホ (<=639px) の余白詰め＆第1・第2階層プルダウンハンドル */
+    /* スマホ (<=639px) */
     @media (max-width: 639px) {{
         .block-container {{
             padding-top: 0.1rem !important;
@@ -152,10 +154,6 @@ st.markdown(
         div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button p {{
             font-size: 22px !important;
             line-height: 1 !important;
-        }}
-        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button:hover {{
-            color: #f8fafc !important;
-            border-color: #38bdf8 !important;
         }}
         div[data-testid="stElementContainer"]:has(#a1-preset-drawer-handle) + div button,
         div[data-testid="stElementContainer"]:has(#b1-preset-drawer-handle) + div button,
