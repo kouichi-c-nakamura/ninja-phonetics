@@ -56,9 +56,7 @@ if "last_recorded_bytes" not in st.session_state: st.session_state.last_recorded
 if "auto_play" not in st.session_state: st.session_state.auto_play = False
 
 # B1 セッション状態初期化
-if "a1_presets_open" not in st.session_state: st.session_state.a1_presets_open = True
 if "b1_presets_open" not in st.session_state: st.session_state.b1_presets_open = True
-if "e2_passages_open" not in st.session_state: st.session_state.e2_passages_open = True
 if "b1_word_label" not in st.session_state: st.session_state.b1_word_label = "お手本: See (US)"
 if "b1_target_word" not in st.session_state: st.session_state.b1_target_word = "see"
 if "b1_word_audio_bytes" not in st.session_state:
@@ -122,7 +120,7 @@ st.markdown(
             display: none !important;
         }}
     }}
-    /* スマホ (<=639px) */
+    /* スマホ (<=639px) の余白詰め＆第1・第2階層プルダウンハンドル */
     @media (max-width: 639px) {{
         .block-container {{
             padding-top: 0.1rem !important;
@@ -154,6 +152,10 @@ st.markdown(
         div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button p {{
             font-size: 22px !important;
             line-height: 1 !important;
+        }}
+        div[data-testid="stElementContainer"]:has(#mobile-drawer-handle) + div button:hover {{
+            color: #f8fafc !important;
+            border-color: #38bdf8 !important;
         }}
         div[data-testid="stElementContainer"]:has(#a1-preset-drawer-handle) + div button,
         div[data-testid="stElementContainer"]:has(#b1-preset-drawer-handle) + div button,
@@ -274,16 +276,31 @@ if st.session_state.app_mode == "RL":
         rec_label = (
             f"2. 「{st.session_state.a1_target_word}」を録音して解析 (R / L)"
             if has_target_word
-            else "2. ⬅ 先に左欄へ発音する英単語を入力すると録音可能になります"
+            else "2. ⬅ 先に左欄へ発音する英単語を入力すると録音・アップロード可能になります"
         )
         audio_input = st.audio_input(rec_label, disabled=not has_target_word, key="a1_audio_in")
+        a1_uploaded_file = st.file_uploader(
+            "または音声ファイルをアップロード (WAV / MP3 / M4A)",
+            type=["wav", "mp3", "m4a"],
+            disabled=not has_target_word,
+            key="a1_file_in",
+        )
 
-    if not preset_clicked and audio_input is not None and has_target_word:
-        new_bytes = audio_input.read()
-        if new_bytes != st.session_state.last_recorded_bytes:
-            st.session_state.last_recorded_bytes = new_bytes
-            st.session_state.current_audio_bytes = new_bytes
-            st.session_state.current_label = f"あなたの発音録音: {st.session_state.a1_target_word}"
+    active_a1_bytes = None
+    a1_src_name = ""
+    if audio_input is not None:
+        active_a1_bytes = audio_input.getvalue()
+        a1_src_name = f"あなたの発音録音: {st.session_state.a1_target_word}"
+    elif a1_uploaded_file is not None:
+        active_a1_bytes = a1_uploaded_file.getvalue()
+        a1_src_name = f"アップロード音声 ({a1_uploaded_file.name}): {st.session_state.a1_target_word}"
+
+    if not preset_clicked and active_a1_bytes and has_target_word:
+        if active_a1_bytes != st.session_state.get("a1_last_seen_bytes"):
+            st.session_state["a1_last_seen_bytes"] = active_a1_bytes
+            st.session_state.last_recorded_bytes = active_a1_bytes
+            st.session_state.current_audio_bytes = active_a1_bytes
+            st.session_state.current_label = a1_src_name
             st.session_state.auto_play = False
 
     if st.session_state.current_audio_bytes is not None:
@@ -393,16 +410,31 @@ elif st.session_state.app_mode == "SIBILANT":
             b1_rec_label = (
                 f"2. 「{st.session_state.b1_target_word}」を録音してCOG解析"
                 if has_b1_word
-                else "2. ⬅ 先に左欄へ発音する英単語を入力すると録音可能になります"
+                else "2. ⬅ 先に左欄へ発音する英単語を入力すると録音・アップロード可能になります"
             )
             b1_audio_in = st.audio_input(b1_rec_label, disabled=not has_b1_word, key="b1_word_audio_in")
+            b1_uploaded_file = st.file_uploader(
+                "または音声ファイルをアップロード (WAV / MP3 / M4A)",
+                type=["wav", "mp3", "m4a"],
+                disabled=not has_b1_word,
+                key="b1_word_file_in",
+            )
 
-        if not b1_preset_clicked and b1_audio_in is not None and has_b1_word:
-            new_b1_bytes = b1_audio_in.read()
-            if new_b1_bytes != st.session_state.b1_word_last_rec:
-                st.session_state.b1_word_last_rec = new_b1_bytes
-                st.session_state.b1_word_audio_bytes = new_b1_bytes
-                st.session_state.b1_word_label = f"あなたの発音録音: {st.session_state.b1_target_word}"
+        active_b1_bytes = None
+        b1_src_name = ""
+        if b1_audio_in is not None:
+            active_b1_bytes = b1_audio_in.getvalue()
+            b1_src_name = f"あなたの発音録音: {st.session_state.b1_target_word}"
+        elif b1_uploaded_file is not None:
+            active_b1_bytes = b1_uploaded_file.getvalue()
+            b1_src_name = f"アップロード音声 ({b1_uploaded_file.name}): {st.session_state.b1_target_word}"
+
+        if not b1_preset_clicked and active_b1_bytes and has_b1_word:
+            if active_b1_bytes != st.session_state.get("b1_word_last_seen_bytes"):
+                st.session_state["b1_word_last_seen_bytes"] = active_b1_bytes
+                st.session_state.b1_word_last_rec = active_b1_bytes
+                st.session_state.b1_word_audio_bytes = active_b1_bytes
+                st.session_state.b1_word_label = b1_src_name
                 st.session_state.b1_word_auto_play = False
 
         if st.session_state.b1_word_audio_bytes is not None:
@@ -485,13 +517,27 @@ elif st.session_state.app_mode == "SIBILANT":
                     st.rerun()
         with tw_rec_col:
             tw_audio_in = st.audio_input("上の2文を読み上げて /s/ ↔ /ʃ/ の分離落差を計測", key="b1_twister_audio_in")
+            tw_uploaded_file = st.file_uploader(
+                "または音声ファイルをアップロード (WAV / MP3 / M4A)",
+                type=["wav", "mp3", "m4a"],
+                key="b1_twister_file_in",
+            )
 
-        if not tw_clicked and tw_audio_in is not None:
-            new_tw_bytes = tw_audio_in.read()
-            if new_tw_bytes != st.session_state.b1_twister_last_rec:
-                st.session_state.b1_twister_last_rec = new_tw_bytes
-                st.session_state.b1_twister_audio_bytes = new_tw_bytes
-                st.session_state.b1_twister_label = "あなたの早口言葉録音"
+        active_tw_bytes = None
+        tw_src_name = ""
+        if tw_audio_in is not None:
+            active_tw_bytes = tw_audio_in.getvalue()
+            tw_src_name = "あなたの早口言葉録音"
+        elif tw_uploaded_file is not None:
+            active_tw_bytes = tw_uploaded_file.getvalue()
+            tw_src_name = f"アップロード早口言葉 ({tw_uploaded_file.name})"
+
+        if not tw_clicked and active_tw_bytes:
+            if active_tw_bytes != st.session_state.get("b1_twister_last_seen_bytes"):
+                st.session_state["b1_twister_last_seen_bytes"] = active_tw_bytes
+                st.session_state.b1_twister_last_rec = active_tw_bytes
+                st.session_state.b1_twister_audio_bytes = active_tw_bytes
+                st.session_state.b1_twister_label = tw_src_name
                 st.session_state.b1_twister_auto_play = False
 
         if st.session_state.b1_twister_audio_bytes is not None:
