@@ -86,3 +86,5 @@ recordings/
 temp.ipynb
 
 *word_raw_cache.csv
+
+.streamlit/secrets.toml
