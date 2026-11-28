@@ -1,16 +1,23 @@
 """
-views_listening.py: Ninja Listening Trainer (YouTube) module for NinjaPhonetics
+views_listening.py: Ninja Listening Trainer (YouTube & Local Audio) module for NinjaPhonetics
 """
+import base64
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import tempfile
+import urllib.error
 import urllib.request
+import uuid
 import streamlit as st
 import streamlit.components.v1 as components
 from youtube_transcript_api import YouTubeTranscriptApi
 from ui_styles import _ICE_SHURIKEN_B64, get_ice_shuriken_img_tag
 
 TRANSCRIPT_CACHE_DIR = Path.home() / ".ninja_listening_transcripts"
+
 
 def load_cached_transcript(video_id: str) -> list[dict] | None:
     try:
@@ -48,7 +55,7 @@ def extract_video_id(url: str) -> str | None:
 
 
 def merge_into_sentences(raw_items: list[dict]) -> list[dict]:
-    """Merge fragmented YouTube captions into cleaner sentence/clause lines."""
+    """Merge fragmented captions into cleaner sentence/clause lines."""
     if not raw_items:
         return []
 
@@ -85,12 +92,198 @@ def merge_into_sentences(raw_items: list[dict]) -> list[dict]:
     return merged
 
 
-def _fetch_via_supadata(video_id: str, lang: str = "en") -> list[dict]:
-    api_key = ""
+def parse_srt_text(srt_content: str) -> list[dict]:
+    """Parse .srt subtitle content into Ninja Listening caption dicts."""
+    blocks = re.split(r"\r?\n\r?\n+", srt_content.strip())
+    items = []
+    ts_pat = re.compile(
+        r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})"
+    )
+    for blk in blocks:
+        lines = [ln.strip() for ln in blk.splitlines() if ln.strip()]
+        if not lines:
+            continue
+        ts_idx = next((i for i, ln in enumerate(lines) if ts_pat.search(ln)), -1)
+        if ts_idx == -1:
+            continue
+        m = ts_pat.search(lines[ts_idx])
+        if not m:
+            continue
+        h1, m1, s1, ms1, h2, m2, s2, ms2 = map(int, m.groups())
+        start = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0
+        end = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0
+        text_lines = [re.sub(r"<[^>]+>", "", ln) for ln in lines[ts_idx + 1 :]]
+        txt = " ".join(text_lines).strip()
+        if txt:
+            items.append({
+                "start": start,
+                "duration": max(0.2, end - start),
+                "end": max(start + 0.2, end),
+                "text": txt,
+            })
+    return items
+
+
+def _detect_audio_mime(filename: str) -> str:
+    ext = Path(filename).suffix.lower()
+    return {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+        ".ogg": "audio/ogg",
+        ".flac": "audio/flac",
+    }.get(ext, "audio/mpeg")
+
+
+def _get_secret_or_env(name: str) -> str:
     try:
-        api_key = st.secrets.get("SUPADATA_API_KEY", "").strip()
+        val = str(st.secrets.get(name, "")).strip()
+        if val:
+            return val
     except Exception:
-        api_key = ""
+        pass
+    return os.getenv(name, "").strip()
+
+
+def _post_whisper_api(endpoint: str, api_key: str, model: str, audio_bytes: bytes, filename: str) -> list[dict]:
+    boundary = f"----NinjaBoundary{uuid.uuid4().hex}"
+    mime = _detect_audio_mime(filename)
+    parts = [
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{model}\r\n".encode("utf-8"),
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"response_format\"\r\n\r\nverbose_json\r\n".encode("utf-8"),
+        (
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
+            f"Content-Type: {mime}\r\n\r\n"
+        ).encode("utf-8")
+        + audio_bytes
+        + b"\r\n",
+        f"--{boundary}--\r\n".encode("utf-8"),
+    ]
+    body = b"".join(parts)
+    req = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "User-Agent": "NinjaPhonetics/1.0",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    raw_items = []
+    for seg in data.get("segments", []):
+        start = float(seg.get("start", 0.0))
+        end = max(start + 0.2, float(seg.get("end", start + 1.0)))
+        txt = str(seg.get("text", "")).strip()
+        if txt:
+            raw_items.append({
+                "start": start,
+                "duration": max(0.2, end - start),
+                "end": end,
+                "text": txt,
+            })
+    if not raw_items and data.get("text"):
+        raw_items.append({
+            "start": 0.0,
+            "duration": 5.0,
+            "end": 5.0,
+            "text": str(data["text"]).strip(),
+        })
+    return merge_into_sentences(raw_items)
+
+
+def _is_local_whisper_available() -> bool:
+    try:
+        import faster_whisper  # noqa: F401
+        return True
+    except ImportError:
+        pass
+    try:
+        import whisper  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def get_available_whisper_backend() -> tuple[str, str]:
+    """Return (backend_id, human_label) in priority order."""
+    if _get_secret_or_env("GROQ_API_KEY"):
+        return ("groq", "Groq Whisper API (whisper-large-v3-turbo)")
+    if _get_secret_or_env("OPENAI_API_KEY"):
+        return ("openai", "OpenAI Whisper API (whisper-1)")
+    if _is_local_whisper_available():
+        return ("local", "Local Whisper (base.en)")
+    return ("", "")
+
+
+def transcribe_audio_hybrid(audio_bytes: bytes, filename: str) -> tuple[list[dict], str]:
+    """Transcribe uploaded audio via Groq -> OpenAI -> local faster-whisper/whisper."""
+    groq_key = _get_secret_or_env("GROQ_API_KEY")
+    if groq_key:
+        caps = _post_whisper_api(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            groq_key,
+            "whisper-large-v3-turbo",
+            audio_bytes,
+            filename,
+        )
+        return caps, "Groq Whisper"
+
+    openai_key = _get_secret_or_env("OPENAI_API_KEY")
+    if openai_key:
+        caps = _post_whisper_api(
+            "https://api.openai.com/v1/audio/transcriptions",
+            openai_key,
+            "whisper-1",
+            audio_bytes,
+            filename,
+        )
+        return caps, "OpenAI Whisper"
+
+    suffix = Path(filename).suffix.lower() or ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(audio_bytes)
+        tmp_path = tmp.name
+
+    try:
+        from math import gcd
+        import numpy as np
+        from scipy.signal import resample_poly
+        from faster_whisper import WhisperModel
+        from audio_processing import decode_audio_bytes
+
+        wav_arr, sr = decode_audio_bytes(audio_bytes)
+        wav_1d = np.asarray(wav_arr, dtype=np.float32)
+        if wav_1d.ndim > 1:
+            wav_1d = wav_1d.mean(axis=1)
+        if sr != 16000:
+            g = gcd(int(sr), 16000)
+            wav_1d = resample_poly(wav_1d, 16000 // g, int(sr) // g).astype(np.float32)
+
+        model = WhisperModel("base.en", device="auto", compute_type="int8")
+        segments, _ = model.transcribe(wav_1d, beam_size=5)
+        raw_items = [
+            {
+                "start": float(seg.start),
+                "duration": max(0.2, float(seg.end - seg.start)),
+                "end": float(seg.end),
+                "text": seg.text.strip(),
+            }
+            for seg in segments
+            if seg.text.strip()
+        ]
+        return merge_into_sentences(raw_items), "Local faster-whisper"
+    finally:
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+def _fetch_via_supadata(video_id: str, lang: str = "en") -> list[dict]:
+    api_key = _get_secret_or_env("SUPADATA_API_KEY")
     if not api_key:
         raise RuntimeError("SUPADATA_API_KEY not configured")
 
@@ -110,7 +303,6 @@ def _fetch_via_supadata(video_id: str, lang: str = "en") -> list[dict]:
 
     items = []
     for seg in content:
-        # Supadata returns offset and duration in milliseconds
         start = float(seg.get("offset", 0)) / 1000.0
         dur = max(0.2, float(seg.get("duration", 1000)) / 1000.0)
         txt = str(seg.get("text", "")).replace("\n", " ").strip()
@@ -126,13 +318,11 @@ def _fetch_via_supadata(video_id: str, lang: str = "en") -> list[dict]:
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def fetch_transcript(video_id: str, languages: tuple = ("en", "en-US", "en-GB")) -> list[dict]:
-    # 1. Supadata API（Streamlit Cloud 上でも確実に取得可能）
     try:
         return _fetch_via_supadata(video_id, languages[0])
     except Exception:
         pass
 
-    # 2. ローカル環境向け（住宅用IPからの直接取得）
     if hasattr(YouTubeTranscriptApi, "fetch") or not hasattr(YouTubeTranscriptApi, "get_transcript"):
         api = YouTubeTranscriptApi()
         fetched = api.fetch(video_id, languages=list(languages))
@@ -231,7 +421,101 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     width: 100%;
     height: 100%;
   }
-
+  /* Local Audio Horizontal Scrub Bar */
+  .player-wrap.local-mode {
+    aspect-ratio: auto;
+    max-height: none;
+    padding: 12px 14px 10px;
+    background: linear-gradient(180deg, #0b1120 0%, #060b16 100%);
+    border-bottom: 1px solid #1e293b;
+  }
+  .local-audio-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .local-audio-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #bae6fd;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .local-audio-badge {
+    font-size: 10px;
+    font-weight: 700;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.14);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 999px;
+    padding: 1px 7px;
+    flex-shrink: 0;
+  }
+  .local-scrub-track {
+    position: relative;
+    width: 100%;
+    height: 14px;
+    background: #1e293b;
+    border-radius: 999px;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .local-scrub-range {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgba(16, 185, 129, 0.28);
+    border-left: 2px solid #10b981;
+    border-right: 2px solid #f59e0b;
+    pointer-events: none;
+    display: none;
+  }
+  .local-scrub-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0%;
+    background: linear-gradient(90deg, #0284c7, #38bdf8);
+    border-radius: 999px;
+    pointer-events: none;
+  }
+  .local-scrub-thumb {
+    position: absolute;
+    top: 50%;
+    left: 0%;
+    width: 16px;
+    height: 16px;
+    transform: translate(-50%, -50%);
+    background: #f8fafc;
+    border: 2.5px solid #38bdf8;
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.65);
+    pointer-events: none;
+  }
+  .local-scrub-ticks {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 7px;
+    font-size: 11px;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+  }
+  .yt-play-btn.local-play-btn {
+    background: #0284c7;
+  }
+  .no-captions-notice {
+    padding: 28px 16px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
+    line-height: 1.65;
+  }
   .meta-bar {
     display: flex;
     flex-direction: column;
@@ -1239,8 +1523,24 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <div class="stage-banner" id="stage-banner">1. Play video &amp; tap Sync on the line you hear (or ✓ Sync OK)</div>
 
   <div class="video-section">
-    <div class="player-wrap">
+    <div class="player-wrap" id="player-wrap">
       <div id="yt-player"></div>
+      <div id="local-audio-box" style="display:none;">
+        <div class="local-audio-header">
+          <span class="local-audio-title" id="local-audio-title">Local Audio</span>
+          <span class="local-audio-badge">LOCAL AUDIO</span>
+        </div>
+        <div class="local-scrub-track" id="local-scrub-track">
+          <div class="local-scrub-range" id="local-scrub-range"></div>
+          <div class="local-scrub-fill" id="local-scrub-fill"></div>
+          <div class="local-scrub-thumb" id="local-scrub-thumb"></div>
+        </div>
+        <div class="local-scrub-ticks">
+          <span id="local-cur-precise">00:00.0</span>
+          <span>Tap or drag bar to scrub</span>
+          <span id="local-dur-precise">00:00.0</span>
+        </div>
+      </div>
     </div>
     <div class="meta-bar" id="meta-bar"></div>
   </div>
@@ -1374,28 +1674,35 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   const captions = __CAPTIONS_JSON__;
   const videoId = __VIDEO_ID_JSON__;
   const sourceUrl = __SOURCE_URL_JSON__;
+  const mediaMode = __MEDIA_MODE_JSON__;
+  const localAudioDataUri = __LOCAL_AUDIO_URI_JSON__;
+  const localTitle = __LOCAL_TITLE_JSON__;
+  const initialSynced = __INITIAL_SYNCED_JSON__;
+
+  if (typeof window.YT === "undefined") {
+    window.YT = { PlayerState: { UNSTARTED: -1, ENDED: 0, PLAYING: 1, PAUSED: 2, BUFFERING: 3, CUED: 5 } };
+  }
 
   let urlBarManuallyVisible = false;
-
   const LAST_VIDEO_KEY = "ninja_last_video_id_v1";
 
   try {
-    if (videoId) {
+    if (mediaMode === "youtube" && videoId) {
       localStorage.setItem(LAST_VIDEO_KEY, videoId);
-    }
-    if (window.parent && window.parent.history && videoId) {
-      const parentUrl = new URL(window.parent.location.href);
-      let changed = false;
-      if (parentUrl.searchParams.get("v") !== videoId) {
-        parentUrl.searchParams.set("v", videoId);
-        changed = true;
-      }
-      if (parentUrl.searchParams.get("mode") !== "LISTENING") {
-        parentUrl.searchParams.set("mode", "LISTENING");
-        changed = true;
-      }
-      if (changed) {
-        window.parent.history.replaceState(null, "", parentUrl.toString());
+      if (window.parent && window.parent.history) {
+        const parentUrl = new URL(window.parent.location.href);
+        let changed = false;
+        if (parentUrl.searchParams.get("v") !== videoId) {
+          parentUrl.searchParams.set("v", videoId);
+          changed = true;
+        }
+        if (parentUrl.searchParams.get("mode") !== "LISTENING") {
+          parentUrl.searchParams.set("mode", "LISTENING");
+          changed = true;
+        }
+        if (changed) {
+          window.parent.history.replaceState(null, "", parentUrl.toString());
+        }
       }
     }
   } catch (e) {}
@@ -1403,18 +1710,30 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   function applyParentUrlBarVisibility() {
     try {
       if (!window.parent || !window.parent.document) return;
+      const shouldShow = !isRunning && urlBarManuallyVisible;
+
       const inputEl = window.parent.document.querySelector('input[aria-label="YouTube URL"]');
       const inputBlock = inputEl ? inputEl.closest('div[data-testid="stTextInput"]') : null;
       if (inputBlock) {
-        const container = inputBlock.closest('div[data-testid="element-container"]') || inputBlock;
-        const shouldShow = !isRunning && urlBarManuallyVisible;
+        const container = inputBlock.closest('div[data-testid="stElementContainer"]') || inputBlock.closest('div[data-testid="element-container"]') || inputBlock;
         container.style.display = shouldShow ? "" : "none";
       }
+      const orDiv = window.parent.document.getElementById("ninja-or-divider");
+      if (orDiv) {
+        const divContainer = orDiv.closest('div[data-testid="stElementContainer"]') || orDiv;
+        divContainer.style.display = shouldShow ? "" : "none";
+      }
+      const uploaders = window.parent.document.querySelectorAll('div[data-testid="stFileUploader"]');
+      uploaders.forEach((up) => {
+        const colWrap = up.closest('div[data-testid="stHorizontalBlock"]') || up.closest('div[data-testid="stElementContainer"]') || up;
+        colWrap.style.display = shouldShow ? "" : "none";
+      });
+
       const buttons = window.parent.document.querySelectorAll('button');
       buttons.forEach((btn) => {
         const txt = (btn.textContent || "").trim();
         if (txt === "▼" || txt === "▲") {
-          const btnContainer = btn.closest('div[data-testid="element-container"]') || btn;
+          const btnContainer = btn.closest('div[data-testid="stElementContainer"]') || btn.closest('div[data-testid="element-container"]') || btn;
           btnContainer.style.display = isRunning ? "none" : "";
         }
       });
@@ -1484,7 +1803,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   const YT_PLAY_ICON = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
   const YT_PAUSE_ICON = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
-
   const LINK_ICON = '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
   const UNLINK_ICON = '<svg viewBox="0 0 24 24"><path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/></svg>';
   let nudgeDrawerOpen = false;
@@ -1514,41 +1832,23 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       name: "Ninja Protocol (0.6x Anchor)",
       shortKey: "ninja",
       steps: [
-        { speed: 1.0, cc: false },
-        { speed: 1.0, cc: true },
-        { speed: 0.6, cc: true },
-        { speed: 0.6, cc: true },
-        { speed: 0.6, cc: true },
-        { speed: 0.7, cc: true },
-        { speed: 0.8, cc: true },
-        { speed: 0.9, cc: true },
-        { speed: 1.0, cc: false },
-        { speed: 1.1, cc: false },
-        { speed: 1.2, cc: false },
-        { speed: 1.3, cc: false },
-        { speed: 1.4, cc: false },
-        { speed: 1.5, cc: false },
-        { speed: 1.6, cc: false },
-        { speed: 1.7, cc: false },
-        { speed: 1.8, cc: false },
-        { speed: 1.9, cc: false },
-        { speed: 2.0, cc: false }
+        { speed: 1.0, cc: false }, { speed: 1.0, cc: true },
+        { speed: 0.6, cc: true }, { speed: 0.6, cc: true }, { speed: 0.6, cc: true },
+        { speed: 0.7, cc: true }, { speed: 0.8, cc: true }, { speed: 0.9, cc: true },
+        { speed: 1.0, cc: false }, { speed: 1.1, cc: false }, { speed: 1.2, cc: false },
+        { speed: 1.3, cc: false }, { speed: 1.4, cc: false }, { speed: 1.5, cc: false },
+        { speed: 1.6, cc: false }, { speed: 1.7, cc: false }, { speed: 1.8, cc: false },
+        { speed: 1.9, cc: false }, { speed: 2.0, cc: false }
       ]
     },
     "express": {
       name: "Ninja Protocol (Express)",
       shortKey: "express",
       steps: [
-        { speed: 1.0, cc: false },
-        { speed: 0.6, cc: true },
-        { speed: 1.0, cc: false },
-        { speed: 1.3, cc: false },
-        { speed: 1.5, cc: false },
-        { speed: 1.6, cc: false },
-        { speed: 1.7, cc: false },
-        { speed: 1.8, cc: false },
-        { speed: 1.9, cc: false },
-        { speed: 2.0, cc: false }
+        { speed: 1.0, cc: false }, { speed: 0.6, cc: true },
+        { speed: 1.0, cc: false }, { speed: 1.3, cc: false }, { speed: 1.5, cc: false },
+        { speed: 1.6, cc: false }, { speed: 1.7, cc: false }, { speed: 1.8, cc: false },
+        { speed: 1.9, cc: false }, { speed: 2.0, cc: false }
       ]
     },
     "shadowing": {
@@ -1559,17 +1859,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   };
 
   function loadCustomProtocols() {
-    try {
-      return JSON.parse(localStorage.getItem(CUSTOM_PROTOCOLS_KEY) || "{}");
-    } catch (e) {
-      return {};
-    }
+    try { return JSON.parse(localStorage.getItem(CUSTOM_PROTOCOLS_KEY) || "{}"); }
+    catch (e) { return {}; }
   }
 
   function saveCustomProtocols(obj) {
-    try {
-      localStorage.setItem(CUSTOM_PROTOCOLS_KEY, JSON.stringify(obj));
-    } catch (e) {}
+    try { localStorage.setItem(CUSTOM_PROTOCOLS_KEY, JSON.stringify(obj)); } catch (e) {}
   }
 
   let customProtocols = loadCustomProtocols();
@@ -1590,18 +1885,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   let vasEnabled = localStorage.getItem("ninja_vas_enabled") !== "false";
   let subjectId = localStorage.getItem(SUBJECT_ID_KEY) || "SUBJ_001";
   let trialLogs = [];
-  try {
-    trialLogs = JSON.parse(localStorage.getItem(TRIAL_LOG_KEY) || "[]");
-  } catch (e) {
-    trialLogs = [];
-  }
+  try { trialLogs = JSON.parse(localStorage.getItem(TRIAL_LOG_KEY) || "[]"); } catch (e) { trialLogs = []; }
 
   let player = null;
-  let videoTitle = videoId;
+  let videoTitle = localTitle || videoId;
   let activeCaptionIdx = -1;
   let previewCaptionIdx = -1;
 
-  let isSynced = false;
+  let isSynced = Boolean(initialSynced);
   let restoredFromCache = false;
   let timeOffset = 0.0;
   let hasUserRange = false;
@@ -1643,27 +1934,20 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   function togglePlayPause() {
     if (!player || typeof player.getPlayerState !== "function") return;
-    const state = player.getPlayerState();
-    if (state === YT.PlayerState.PLAYING) {
-      player.pauseVideo();
-    } else {
-      player.playVideo();
-    }
+    if (player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
+    else player.playVideo();
   }
 
   function updatePlayButtonIcon() {
     const btn = document.getElementById("play-toggle-btn");
     if (!btn || !player || typeof player.getPlayerState !== "function") return;
-    const playing = player.getPlayerState() === YT.PlayerState.PLAYING;
-    btn.innerHTML = playing ? YT_PAUSE_ICON : YT_PLAY_ICON;
+    btn.innerHTML = (player.getPlayerState() === YT.PlayerState.PLAYING) ? YT_PAUSE_ICON : YT_PLAY_ICON;
   }
 
   function setStepsCollapsedPortrait(collapsed) {
     stepsCollapsedPortrait = collapsed;
     ninjaPanelEl.classList.toggle("steps-collapsed", collapsed);
-    if (stepsChevronEl) {
-      stepsChevronEl.textContent = collapsed ? "▸" : "▾";
-    }
+    if (stepsChevronEl) stepsChevronEl.textContent = collapsed ? "▸" : "▾";
   }
 
   function toggleStepsDrawer() {
@@ -1674,9 +1958,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
 
   function saveTrialLogs() {
-    try {
-      localStorage.setItem(TRIAL_LOG_KEY, JSON.stringify(trialLogs));
-    } catch (e) {}
+    try { localStorage.setItem(TRIAL_LOG_KEY, JSON.stringify(trialLogs)); } catch (e) {}
     updateLogPill();
   }
 
@@ -1706,9 +1988,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   function promptVasForCurrentStep() {
     awaitingVas = true;
-    if (player && typeof player.pauseVideo === "function") {
-      player.pauseVideo();
-    }
+    if (player && typeof player.pauseVideo === "function") player.pauseVideo();
     const step = steps[currentStepIdx];
     document.getElementById("vas-step-prompt").textContent =
       `Step ${currentStepIdx + 1}/${steps.length} (${step.speed.toFixed(1)}x ${step.cc ? 'CC ON' : 'CC OFF'}) — Clarity`;
@@ -1734,7 +2014,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       PlaybackRate: Number(step.speed.toFixed(1)),
       Subtitles: Boolean(step.cc),
       VAS_Clarity: score,
-      URL: sourceUrl || `https://www.youtube.com/watch?v=${videoId}`,
+      URL: sourceUrl || (mediaMode === "youtube" ? `https://www.youtube.com/watch?v=${videoId}` : `local://${videoTitle}`),
       Title: videoTitle || videoId,
       Protocol: proto.shortKey || proto.name
     });
@@ -1757,29 +2037,23 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     protocolSelectEl.innerHTML = "";
     for (const [id, proto] of Object.entries(BUILTIN_PROTOCOLS)) {
       const opt = document.createElement("option");
-      opt.value = id;
-      opt.textContent = proto.name;
+      opt.value = id; opt.textContent = proto.name;
       protocolSelectEl.appendChild(opt);
     }
     for (const [id, proto] of Object.entries(customProtocols)) {
       const opt = document.createElement("option");
-      opt.value = id;
-      opt.textContent = `★ ${proto.name}`;
+      opt.value = id; opt.textContent = `★ ${proto.name}`;
       protocolSelectEl.appendChild(opt);
     }
     const newCustomOpt = document.createElement("option");
     newCustomOpt.value = "__new_custom__";
     newCustomOpt.textContent = "+ Custom sequence...";
     protocolSelectEl.appendChild(newCustomOpt);
-
     protocolSelectEl.value = selectedProtocolId;
   }
 
   function onProtocolChange(val) {
-    if (isRunning) {
-      protocolSelectEl.value = selectedProtocolId;
-      return;
-    }
+    if (isRunning) { protocolSelectEl.value = selectedProtocolId; return; }
     if (val === "__new_custom__") {
       protocolSelectEl.value = selectedProtocolId;
       openModal(true);
@@ -1792,11 +2066,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
 
   function loadSyncCache() {
-    try {
-      return JSON.parse(localStorage.getItem(SYNC_CACHE_KEY) || "{}");
-    } catch (e) {
-      return {};
-    }
+    try { return JSON.parse(localStorage.getItem(SYNC_CACHE_KEY) || "{}"); } catch (e) { return {}; }
   }
 
   function saveVideoSyncState(currentPlaybackSec = null) {
@@ -1819,9 +2089,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       const keys = Object.keys(cache);
       if (keys.length > MAX_CACHE_ENTRIES) {
         keys.sort((a, b) => (cache[a].updatedAt || 0) - (cache[b].updatedAt || 0));
-        for (let i = 0; i < keys.length - MAX_CACHE_ENTRIES; i++) {
-          delete cache[keys[i]];
-        }
+        for (let i = 0; i < keys.length - MAX_CACHE_ENTRIES; i++) delete cache[keys[i]];
       }
       localStorage.setItem(SYNC_CACHE_KEY, JSON.stringify(cache));
     } catch (e) {}
@@ -1831,10 +2099,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     if (!videoId) return;
     try {
       const cache = loadSyncCache();
-      if (cache[videoId]) {
-        delete cache[videoId];
-        localStorage.setItem(SYNC_CACHE_KEY, JSON.stringify(cache));
-      }
+      if (cache[videoId]) { delete cache[videoId]; localStorage.setItem(SYNC_CACHE_KEY, JSON.stringify(cache)); }
     } catch (e) {}
   }
 
@@ -1861,7 +2126,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   function getMaxDuration() {
     if (player && typeof player.getDuration === "function") {
       const d = player.getDuration();
-      if (d && d > 0) return d;
+      if (d && !isNaN(d) && d > 0) return d;
     }
     if (captions.length > 0) return captions[captions.length - 1].end + 30;
     return 3600;
@@ -1880,17 +2145,41 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   function fmtTime(sec) {
     if (sec === undefined || sec === null || isNaN(sec)) return "00:00";
     const sTotal = Math.max(0, Math.floor(sec));
-    const m = Math.floor(sTotal / 60);
-    const s = sTotal % 60;
-    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    return String(Math.floor(sTotal / 60)).padStart(2, "0") + ":" + String(sTotal % 60).padStart(2, "0");
   }
 
   function fmtTimePrecise(sec) {
     if (sec === undefined || sec === null || isNaN(sec)) return "00:00.0";
     const sClamped = Math.max(0, sec);
-    const m = Math.floor(sClamped / 60);
-    const s = (sClamped % 60).toFixed(1).padStart(4, "0");
-    return String(m).padStart(2, "0") + ":" + s;
+    return String(Math.floor(sClamped / 60)).padStart(2, "0") + ":" + (sClamped % 60).toFixed(1).padStart(4, "0");
+  }
+
+  function updateLocalScrubBar(curT, dur) {
+    if (mediaMode !== "local") return;
+    const fillEl = document.getElementById("local-scrub-fill");
+    const thumbEl = document.getElementById("local-scrub-thumb");
+    const rangeEl = document.getElementById("local-scrub-range");
+    const curPrecEl = document.getElementById("local-cur-precise");
+    const durPrecEl = document.getElementById("local-dur-precise");
+
+    const safeDur = (dur && !isNaN(dur) && dur > 0) ? dur : 0;
+    const pct = safeDur > 0 ? Math.max(0, Math.min(100, (curT / safeDur) * 100)) : 0;
+    if (fillEl) fillEl.style.width = pct + "%";
+    if (thumbEl) thumbEl.style.left = pct + "%";
+    if (curPrecEl) curPrecEl.textContent = fmtTimePrecise(curT || 0);
+    if (durPrecEl) durPrecEl.textContent = fmtTimePrecise(safeDur);
+
+    if (rangeEl) {
+      if (hasUserRange && safeDur > 0) {
+        const sPct = Math.max(0, Math.min(100, (rangeStart / safeDur) * 100));
+        const ePct = Math.max(sPct, Math.min(100, (rangeEnd / safeDur) * 100));
+        rangeEl.style.display = "block";
+        rangeEl.style.left = sPct + "%";
+        rangeEl.style.width = (ePct - sPct) + "%";
+      } else {
+        rangeEl.style.display = "none";
+      }
+    }
   }
 
   function updatePanelLockState() {
@@ -1910,25 +2199,28 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       ninjaPanelEl.classList.add("awaiting-range");
       statusBadge.textContent = "Step 2: S / E";
       stageBannerEl.classList.remove("hidden");
-      stageBannerEl.textContent = "2. Mark start (S) or end (E)";
+      stageBannerEl.textContent = captions.length > 0
+        ? "2. Mark start (S) or end (E)"
+        : "2. Scrub bar & tap Mark start / Mark end to begin";
     } else {
       ninjaPanelEl.classList.remove("locked-unsynced", "awaiting-range");
       stageBannerEl.classList.add("hidden");
-      if (!isRunning) {
-        statusBadge.textContent = "Ready";
-      }
+      if (!isRunning) statusBadge.textContent = "Ready";
     }
   }
 
   function renderSyncBar() {
     const curTimeText = document.getElementById("time-display")?.textContent || "00:00 / 00:00";
     const urlBtnClass = `url-toggle-btn${urlBarManuallyVisible ? " active" : ""}`;
+    const srcBtnLabel = mediaMode === "local" ? "SRC" : "URL";
+    const playBtnClass = mediaMode === "local" ? "yt-play-btn local-play-btn" : "yt-play-btn";
+
     if (!isSynced) {
       metaBarEl.innerHTML = `
         <div class="meta-top">
           <div class="meta-left-controls">
-            <button class="${urlBtnClass}" id="url-toggle-btn" data-tip="Change YouTube URL" onclick="toggleUrlBar()">URL</button>
-            <button class="yt-play-btn" id="play-toggle-btn" data-tip="Play / Pause video" onclick="togglePlayPause()">${YT_PLAY_ICON}</button>
+            <button class="${urlBtnClass}" id="url-toggle-btn" data-tip="Show / Hide Source Picker" onclick="toggleUrlBar()">${srcBtnLabel}</button>
+            <button class="${playBtnClass}" id="play-toggle-btn" data-tip="Play / Pause" onclick="togglePlayPause()">${YT_PLAY_ICON}</button>
             <div class="time-display" id="time-display">${curTimeText}</div>
           </div>
           <button class="link-icon-btn sync-link" data-tip="Sync subtitles (accept current timing)" onclick="acceptSyncAsIs()">${LINK_ICON}</button>
@@ -1939,25 +2231,26 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       const savedHtml = restoredFromCache ? `<span class="saved-tag">Saved</span>` : "";
       const pillClass = `offset-toggle-pill${nudgeDrawerOpen ? " open" : ""}`;
       const drawerClass = `sync-nudge-drawer${nudgeDrawerOpen ? " open" : ""}`;
+      const rightControlsHtml = captions.length > 0
+        ? `<div class="meta-right-controls">
+             <button class="${pillClass}" data-tip="Tap to fine-tune subtitle timing" onclick="toggleNudgeDrawer()">
+               ${savedHtml}<span class="offset-badge">${sign}${timeOffset.toFixed(1)}s</span>
+             </button>
+             <button class="link-icon-btn unsync-unlink" data-tip="Unsync & reset" onclick="unsyncAll()">${UNLINK_ICON}</button>
+           </div>`
+        : `<div class="meta-right-controls"><span style="color:#64748b;font-size:10.5px;">Audio-only mode</span></div>`;
+
       metaBarEl.innerHTML = `
         <div class="meta-top">
           <div class="meta-left-controls">
-            <button class="${urlBtnClass}" id="url-toggle-btn" data-tip="Change YouTube URL" onclick="toggleUrlBar()">URL</button>
-            <button class="yt-play-btn" id="play-toggle-btn" data-tip="Play / Pause video" onclick="togglePlayPause()">${YT_PLAY_ICON}</button>
+            <button class="${urlBtnClass}" id="url-toggle-btn" data-tip="Show / Hide Source Picker" onclick="toggleUrlBar()">${srcBtnLabel}</button>
+            <button class="${playBtnClass}" id="play-toggle-btn" data-tip="Play / Pause" onclick="togglePlayPause()">${YT_PLAY_ICON}</button>
             <div class="time-display" id="time-display">${curTimeText}</div>
           </div>
-          <div class="meta-right-controls">
-            <button class="${pillClass}" data-tip="Tap to fine-tune subtitle timing" onclick="toggleNudgeDrawer()">
-              ${savedHtml}<span class="offset-badge">${sign}${timeOffset.toFixed(1)}s</span>
-            </button>
-            <button class="link-icon-btn unsync-unlink" data-tip="Unsync & reset" onclick="unsyncAll()">${UNLINK_ICON}</button>
-          </div>
+          ${rightControlsHtml}
         </div>
         <div class="${drawerClass}">
-          <div class="nudge-labels-row">
-            <span>Sub is LAGGING by</span>
-            <span>LEADING by</span>
-          </div>
+          <div class="nudge-labels-row"><span>Sub is LAGGING by</span><span>LEADING by</span></div>
           <div class="nudge-buttons-row">
             <button class="nudge-btn" onclick="adjustOffset(-1.0)">1s</button>
             <button class="nudge-btn" onclick="adjustOffset(-0.5)">.5s</button>
@@ -1977,35 +2270,18 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   function acceptSyncAsIs() {
     const now = (player && typeof player.getCurrentTime === "function") ? player.getCurrentTime() : 0;
-    timeOffset = 0.0;
-    isSynced = true;
-    restoredFromCache = false;
-    activeCaptionIdx = -1;
-    previewCaptionIdx = -1;
-    saveVideoSyncState(now);
-    renderSyncBar();
-    renderCaptions();
-    updateRangeUI();
-    updatePlaybackHighlight(now, true);
+    timeOffset = 0.0; isSynced = true; restoredFromCache = false;
+    activeCaptionIdx = -1; previewCaptionIdx = -1;
+    saveVideoSyncState(now); renderSyncBar(); renderCaptions(); updateRangeUI(); updatePlaybackHighlight(now, true);
   }
 
   function unsyncAll() {
     if (isRunning) return;
-    stopSequence();
-    deleteVideoSyncState();
-    isSynced = false;
-    restoredFromCache = false;
-    hasUserRange = false;
-    cachedResumeTime = null;
-    timeOffset = 0.0;
-    activeCaptionIdx = -1;
-    previewCaptionIdx = -1;
-    renderSyncBar();
-    renderCaptions();
-    updateRangeUI();
-    if (player && typeof player.getCurrentTime === "function") {
-      updatePlaybackHighlight(player.getCurrentTime(), false);
-    }
+    stopSequence(); deleteVideoSyncState();
+    isSynced = false; restoredFromCache = false; hasUserRange = false;
+    cachedResumeTime = null; timeOffset = 0.0; activeCaptionIdx = -1; previewCaptionIdx = -1;
+    renderSyncBar(); renderCaptions(); updateRangeUI();
+    if (player && typeof player.getCurrentTime === "function") updatePlaybackHighlight(player.getCurrentTime(), false);
   }
 
   function adjustOffset(delta) {
@@ -2019,40 +2295,24 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       rangeEnd = Math.max(rangeStart + 0.5, rangeEnd + diff);
     }
     activeCaptionIdx = -1;
-    saveVideoSyncState();
-    renderSyncBar();
-    renderCaptions();
-    updateRangeUI();
-    if (player && typeof player.getCurrentTime === "function") {
-      updatePlaybackHighlight(player.getCurrentTime(), true);
-    }
+    saveVideoSyncState(); renderSyncBar(); renderCaptions(); updateRangeUI();
+    if (player && typeof player.getCurrentTime === "function") updatePlaybackHighlight(player.getCurrentTime(), true);
   }
 
   function setStartBoundary(newStart) {
     if (isRunning) return;
-    const maxDur = getMaxDuration();
     rangeStart = Math.max(0, newStart);
-    if (!hasUserRange || rangeEnd <= rangeStart + 0.3) {
-      rangeEnd = Math.min(maxDur, rangeStart + DEFAULT_SPAN);
-    }
+    if (!hasUserRange || rangeEnd <= rangeStart + 0.3) rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
     hasUserRange = true;
-    saveVideoSyncState(rangeStart);
-    updatePanelLockState();
-    updateRangeUI();
-    renderStepsList();
+    saveVideoSyncState(rangeStart); updatePanelLockState(); updateRangeUI(); renderStepsList();
   }
 
   function setEndBoundary(newEnd) {
     if (isRunning) return;
     rangeEnd = Math.max(0.5, newEnd);
-    if (!hasUserRange || rangeStart >= rangeEnd - 0.3) {
-      rangeStart = Math.max(0, rangeEnd - DEFAULT_SPAN);
-    }
+    if (!hasUserRange || rangeStart >= rangeEnd - 0.3) rangeStart = Math.max(0, rangeEnd - DEFAULT_SPAN);
     hasUserRange = true;
-    saveVideoSyncState(rangeStart);
-    updatePanelLockState();
-    updateRangeUI();
-    renderStepsList();
+    saveVideoSyncState(rangeStart); updatePanelLockState(); updateRangeUI(); renderStepsList();
   }
 
   function updateRangeUI() {
@@ -2064,35 +2324,22 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       endValEl.textContent = fmtTimePrecise(rangeEnd);
     }
     highlightRangeCaptions();
+    if (player && typeof player.getCurrentTime === "function") updateLocalScrubBar(player.getCurrentTime(), player.getDuration());
   }
 
   function highlightRangeCaptions() {
-    let firstInRange = -1;
-    let lastInRange = -1;
-
+    let firstInRange = -1, lastInRange = -1;
     captions.forEach((item, idx) => {
       const el = document.getElementById("line-" + idx);
       if (!el) return;
-      const sBtn = el.querySelector(".s-btn");
-      const eBtn = el.querySelector(".e-btn");
-      if (sBtn) sBtn.classList.remove("is-start");
-      if (eBtn) eBtn.classList.remove("is-end");
-
-      if (!hasUserRange) {
-        el.classList.remove("in-range");
-        return;
-      }
-
-      const adjStart = item.start + timeOffset;
-      const adjEnd = item.end + timeOffset;
+      el.querySelector(".s-btn")?.classList.remove("is-start");
+      el.querySelector(".e-btn")?.classList.remove("is-end");
+      if (!hasUserRange) { el.classList.remove("in-range"); return; }
+      const adjStart = item.start + timeOffset, adjEnd = item.end + timeOffset;
       const inRange = (adjEnd > rangeStart + 0.1) && (adjStart < rangeEnd - 0.1);
       el.classList.toggle("in-range", inRange);
-      if (inRange) {
-        if (firstInRange === -1) firstInRange = idx;
-        lastInRange = idx;
-      }
+      if (inRange) { if (firstInRange === -1) firstInRange = idx; lastInRange = idx; }
     });
-
     if (hasUserRange && firstInRange !== -1) {
       document.getElementById("line-" + firstInRange)?.querySelector(".s-btn")?.classList.add("is-start");
       document.getElementById("line-" + lastInRange)?.querySelector(".e-btn")?.classList.add("is-end");
@@ -2103,22 +2350,29 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   function updateNeighborClasses() {
     captions.forEach((_, idx) => {
       const el = document.getElementById("line-" + idx);
-      if (!el) return;
-      const isNeighbor = activeCaptionIdx !== -1 && (idx === activeCaptionIdx - 1 || idx === activeCaptionIdx + 1);
-      el.classList.toggle("neighbor-line", isNeighbor);
+      if (el) el.classList.toggle("neighbor-line", activeCaptionIdx !== -1 && (idx === activeCaptionIdx - 1 || idx === activeCaptionIdx + 1));
     });
   }
 
   function renderCaptions() {
     listEl.innerHTML = "";
+    if (!captions || captions.length === 0) {
+      listEl.innerHTML = `
+        <div class="no-captions-notice">
+          <div style="font-size:20px;margin-bottom:6px;">🎧</div>
+          <div><b>字幕なしモード (Audio Only)</b></div>
+          <div style="font-size:12px;color:#64748b;margin-top:4px;">
+            上のシークバーで位置を合わせ、<b>Mark start</b> / <b>Mark end</b> を押すとそのまま Run sequence を実行できます。<br/>
+            字幕が必要な場合は上の <b>SRC</b> から <code>.srt</code> を選択するか、Whisper 自動文字起こしを使用してください。
+          </div>
+        </div>
+      `;
+      return;
+    }
     captions.forEach((item, idx) => {
-      const adjStart = item.start + timeOffset;
-      const adjEnd = item.end + timeOffset;
+      const adjStart = item.start + timeOffset, adjEnd = item.end + timeOffset;
       const div = document.createElement("div");
-      let cls = "caption-line";
-      if (isSynced && idx === activeCaptionIdx) cls += " active";
-      if (!isSynced && idx === previewCaptionIdx) cls += " preview-active";
-      div.className = cls;
+      div.className = "caption-line" + (isSynced && idx === activeCaptionIdx ? " active" : "") + (!isSynced && idx === previewCaptionIdx ? " preview-active" : "");
       div.id = "line-" + idx;
 
       const mainDiv = document.createElement("div");
@@ -2130,9 +2384,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         if (!isSynced) {
           const wasPlaying = (typeof player.getPlayerState === "function" && player.getPlayerState() === YT.PlayerState.PLAYING);
           player.seekTo(targetT, true);
-          if (!wasPlaying && typeof player.pauseVideo === "function") {
-            player.pauseVideo();
-          }
+          if (!wasPlaying && typeof player.pauseVideo === "function") player.pauseVideo();
           updatePlaybackHighlight(targetT, false);
         } else {
           player.seekTo(targetT, true);
@@ -2142,54 +2394,28 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
       const actions = document.createElement("div");
       actions.className = "line-actions";
-
       if (!isSynced) {
         const syncBtn = document.createElement("button");
-        syncBtn.className = "tag-btn sync-line-btn";
-        syncBtn.textContent = "Sync";
-        syncBtn.setAttribute("data-tip", "Sync subtitles to this line right now");
+        syncBtn.className = "tag-btn sync-line-btn"; syncBtn.textContent = "Sync";
         syncBtn.onclick = (e) => {
           e.stopPropagation();
           if (!player || typeof player.getCurrentTime !== "function") return;
           const now = player.getCurrentTime();
           timeOffset = Math.round((now - item.start) * 10) / 10;
-          isSynced = true;
-          restoredFromCache = false;
-          activeCaptionIdx = -1;
-          previewCaptionIdx = -1;
-          saveVideoSyncState(now);
-          renderSyncBar();
-          renderCaptions();
-          updateRangeUI();
-          updatePlaybackHighlight(now, true);
+          isSynced = true; restoredFromCache = false; activeCaptionIdx = -1; previewCaptionIdx = -1;
+          saveVideoSyncState(now); renderSyncBar(); renderCaptions(); updateRangeUI(); updatePlaybackHighlight(now, true);
         };
         actions.appendChild(syncBtn);
       } else {
         const startBtn = document.createElement("button");
-        startBtn.className = "tag-btn s-btn";
-        startBtn.textContent = "S";
-        startBtn.setAttribute("data-tip", "Mark Start at this line");
-        startBtn.onclick = (e) => {
-          e.stopPropagation();
-          setStartBoundary(adjStart);
-        };
-
+        startBtn.className = "tag-btn s-btn"; startBtn.textContent = "S";
+        startBtn.onclick = (e) => { e.stopPropagation(); setStartBoundary(adjStart); };
         const endBtn = document.createElement("button");
-        endBtn.className = "tag-btn e-btn";
-        endBtn.textContent = "E";
-        endBtn.setAttribute("data-tip", "Mark End at this line");
-        endBtn.onclick = (e) => {
-          e.stopPropagation();
-          setEndBoundary(adjEnd);
-        };
-
-        actions.appendChild(startBtn);
-        actions.appendChild(endBtn);
+        endBtn.className = "tag-btn e-btn"; endBtn.textContent = "E";
+        endBtn.onclick = (e) => { e.stopPropagation(); setEndBoundary(adjEnd); };
+        actions.appendChild(startBtn); actions.appendChild(endBtn);
       }
-
-      div.appendChild(mainDiv);
-      div.appendChild(actions);
-      listEl.appendChild(div);
+      div.appendChild(mainDiv); div.appendChild(actions); listEl.appendChild(div);
     });
     highlightRangeCaptions();
   }
@@ -2197,10 +2423,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   function getLatestVasForStep(stepNum) {
     for (let i = trialLogs.length - 1; i >= 0; i--) {
       const r = trialLogs[i];
-      if (r.VideoID === videoId && r.StepIdx === stepNum &&
-          Math.abs(r.StartTime - Number(rangeStart.toFixed(2))) < 0.2) {
-        return r.VAS_Clarity;
-      }
+      if (r.VideoID === videoId && r.StepIdx === stepNum && Math.abs(r.StartTime - Number(rangeStart.toFixed(2))) < 0.2) return r.VAS_Clarity;
     }
     return null;
   }
@@ -2213,238 +2436,205 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       const row = document.createElement("div");
       row.className = "step-item" + (isCurrent ? " current-step" : "");
       row.id = "step-row-" + idx;
-
       const loggedVas = hasUserRange ? getLatestVasForStep(idx + 1) : null;
       const vasBadge = loggedVas !== null ? `<span class="step-vas-pill">${loggedVas}%</span>` : `<span></span>`;
-
       const spinDur = (1.2 / stItem.speed).toFixed(2) + "s";
       const rightAction = isCurrent
         ? `<img src="__SHURIKEN_DATA_URI__" class="step-shuriken${awaitingVas ? ' paused' : ''}" style="--spin-dur:${spinDur};width:18px;height:18px;" alt="" aria-hidden="true" />`
         : `<span style="font-size:11px;color:#64748b;text-align:right;">Tap to jump</span>`;
-
-      row.innerHTML = `
-        <span class="step-num">${idx + 1}</span>
-        <span class="step-speed">${stItem.speed.toFixed(1)}x</span>
-        <span class="${stItem.cc ? 'step-cc-on' : 'step-cc-off'}">${stItem.cc ? 'CC on' : 'CC off'}</span>
-        ${rightAction}
-        ${vasBadge}
-      `;
+      row.innerHTML = `<span class="step-num">${idx + 1}</span><span class="step-speed">${stItem.speed.toFixed(1)}x</span><span class="${stItem.cc ? 'step-cc-on' : 'step-cc-off'}">${stItem.cc ? 'CC on' : 'CC off'}</span>${rightAction}${vasBadge}`;
       row.onclick = () => { runSequence(idx); };
       stepsListEl.appendChild(row);
     });
   }
 
   function setCCVisibility(showCC) {
-    if (showCC) {
-      areaEl.classList.remove("mode-off");
-    } else {
+    if (showCC) areaEl.classList.remove("mode-off");
+    else {
       areaEl.classList.add("mode-off");
-      if (isRunning && currentStepIdx >= 0) {
-        const s = steps[currentStepIdx];
-        blindStepLabel.textContent = `Step ${currentStepIdx + 1}/${steps.length} (${s.speed.toFixed(1)}x) — CC OFF`;
-      } else {
-        blindStepLabel.textContent = "CC OFF — Listen carefully";
-      }
+      blindStepLabel.textContent = (isRunning && currentStepIdx >= 0)
+        ? `Step ${currentStepIdx + 1}/${steps.length} (${steps[currentStepIdx].speed.toFixed(1)}x) — CC OFF`
+        : "CC OFF — Listen carefully";
     }
   }
 
-  function markStartNow() {
-    if (!player || typeof player.getCurrentTime !== "function") return;
-    setStartBoundary(player.getCurrentTime());
-  }
-
-  function markEndNow() {
-    if (!player || typeof player.getCurrentTime !== "function") return;
-    setEndBoundary(player.getCurrentTime());
-  }
+  function markStartNow() { if (player && typeof player.getCurrentTime === "function") setStartBoundary(player.getCurrentTime()); }
+  function markEndNow() { if (player && typeof player.getCurrentTime === "function") setEndBoundary(player.getCurrentTime()); }
 
   function moveToNextFragment() {
     if (!isSynced || !hasUserRange || isRunning) return;
     stopSequence();
-    const prevEnd = rangeEnd;
-    rangeStart = prevEnd;
+    rangeStart = rangeEnd;
     rangeEnd = Math.min(getMaxDuration(), rangeStart + DEFAULT_SPAN);
     hasUserRange = true;
-    saveVideoSyncState(rangeStart);
-    updatePanelLockState();
-    updateRangeUI();
-    renderStepsList();
-    if (player && player.seekTo) {
-      player.seekTo(rangeStart, true);
-      player.playVideo();
-    }
+    saveVideoSyncState(rangeStart); updatePanelLockState(); updateRangeUI(); renderStepsList();
+    if (player && player.seekTo) { player.seekTo(rangeStart, true); player.playVideo(); }
   }
 
   function runSequence(startIdx = 0) {
     if (!player || steps.length === 0 || !isSynced || !hasUserRange) return;
-    awaitingVas = false;
-    vasDrawerEl.classList.remove("open");
-    isRunning = true;
-    areaEl.classList.add("training-active");
-    setStepsCollapsedPortrait(true);
-    updatePanelLockState();
-    applyStep(startIdx);
+    awaitingVas = false; vasDrawerEl.classList.remove("open");
+    isRunning = true; areaEl.classList.add("training-active");
+    setStepsCollapsedPortrait(true); updatePanelLockState(); applyStep(startIdx);
   }
 
   function applyStep(idx) {
     if (idx >= steps.length) {
-      isRunning = false;
-      awaitingVas = false;
-      vasDrawerEl.classList.remove("open");
-      currentStepIdx = -1;
-      areaEl.classList.remove("training-active");
-      setStepsCollapsedPortrait(false);
-      player.pauseVideo();
-      player.setPlaybackRate(1.0);
-      setCCVisibility(true);
-      updatePanelLockState();
-      statusBadge.textContent = "Completed!";
-      renderStepsList();
+      isRunning = false; awaitingVas = false; vasDrawerEl.classList.remove("open"); currentStepIdx = -1;
+      areaEl.classList.remove("training-active"); setStepsCollapsedPortrait(false);
+      player.pauseVideo(); player.setPlaybackRate(1.0); setCCVisibility(true);
+      updatePanelLockState(); statusBadge.textContent = "Completed!"; renderStepsList();
       return;
     }
-
     currentStepIdx = idx;
     const step = steps[idx];
     stepTransitionLock = true;
-
-    player.setPlaybackRate(step.speed);
-    setCCVisibility(step.cc);
+    player.setPlaybackRate(step.speed); setCCVisibility(step.cc);
     statusBadge.textContent = `Step ${idx + 1}/${steps.length} (${step.speed.toFixed(1)}x ${step.cc ? 'CC ON' : 'CC OFF'})`;
-
     renderStepsList();
     const activeRow = document.getElementById("step-row-" + idx);
-    if (activeRow && !stepsCollapsedPortrait) {
-      activeRow.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-
-    player.seekTo(rangeStart, true);
-    player.playVideo();
-    updatePlaybackHighlight(rangeStart, true);
-
+    if (activeRow && !stepsCollapsedPortrait) activeRow.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    player.seekTo(rangeStart, true); player.playVideo(); updatePlaybackHighlight(rangeStart, true);
     setTimeout(() => { stepTransitionLock = false; }, 350);
   }
 
   function stopSequence() {
-    isRunning = false;
-    awaitingVas = false;
-    vasDrawerEl.classList.remove("open");
-    currentStepIdx = -1;
-    areaEl.classList.remove("training-active");
-    setStepsCollapsedPortrait(false);
-    if (player && typeof player.pauseVideo === "function") {
-      player.pauseVideo();
-      player.setPlaybackRate(1.0);
-    }
-    setCCVisibility(true);
-    updatePanelLockState();
-    renderStepsList();
-    if (activeCaptionIdx !== -1) {
-      document.getElementById("line-" + activeCaptionIdx)?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    isRunning = false; awaitingVas = false; vasDrawerEl.classList.remove("open"); currentStepIdx = -1;
+    areaEl.classList.remove("training-active"); setStepsCollapsedPortrait(false);
+    if (player && typeof player.pauseVideo === "function") { player.pauseVideo(); player.setPlaybackRate(1.0); }
+    setCCVisibility(true); updatePanelLockState(); renderStepsList();
+    if (activeCaptionIdx !== -1) document.getElementById("line-" + activeCaptionIdx)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   const hadCachedSync = restoreVideoSyncState();
-  renderProtocolDropdown();
-  setTrainingView(trainingView);
-  renderSyncBar();
-  renderCaptions();
-  renderStepsList();
-  updateRangeUI();
-  updateLogPill();
+  renderProtocolDropdown(); setTrainingView(trainingView); renderSyncBar(); renderCaptions(); renderStepsList(); updateRangeUI(); updateLogPill();
 
-  areaEl.addEventListener("touchstart", () => {
-    userScrolling = true;
-    clearTimeout(scrollTimeout);
-  }, { passive: true });
-  areaEl.addEventListener("touchend", () => {
-    clearTimeout(scrollTimeout);
-    scrollTimeout = setTimeout(() => { userScrolling = false; }, 3000);
-  }, { passive: true });
+  areaEl.addEventListener("touchstart", () => { userScrolling = true; clearTimeout(scrollTimeout); }, { passive: true });
+  areaEl.addEventListener("touchend", () => { clearTimeout(scrollTimeout); scrollTimeout = setTimeout(() => { userScrolling = false; }, 3000); }, { passive: true });
 
-  const tag = document.createElement("script");
-  tag.src = "https://www.youtube.com/iframe_api";
-  document.head.appendChild(tag);
+  function initLocalAudioPlayer() {
+    const wrapEl = document.getElementById("player-wrap");
+    const ytDiv = document.getElementById("yt-player");
+    const localBox = document.getElementById("local-audio-box");
+    const titleEl = document.getElementById("local-audio-title");
+    const trackEl = document.getElementById("local-scrub-track");
 
-  window.onYouTubeIframeAPIReady = function() {
-    player = new YT.Player("yt-player", {
-      videoId: videoId,
-      playerVars: {
-        playsinline: 1,
-        controls: 0,
-        iv_load_policy: 3,
-        cc_load_policy: 0,
-        rel: 0,
-        modestbranding: 1,
-        start: (hadCachedSync && cachedResumeTime !== null && cachedResumeTime > 0)
-          ? Math.floor(cachedResumeTime)
-          : 0
+    if (wrapEl) wrapEl.classList.add("local-mode");
+    if (ytDiv) ytDiv.style.display = "none";
+    if (localBox) localBox.style.display = "block";
+    if (titleEl) titleEl.textContent = localTitle || "Local Audio";
+
+    const audio = new Audio(localAudioDataUri);
+    audio.preload = "metadata";
+    audio.preservesPitch = true; audio.mozPreservesPitch = true; audio.webkitPreservesPitch = true;
+
+    player = {
+      playVideo: () => { audio.play().catch(() => {}); },
+      pauseVideo: () => { audio.pause(); },
+      seekTo: (sec) => {
+        const dur = (audio.duration && !isNaN(audio.duration)) ? audio.duration : sec;
+        audio.currentTime = Math.max(0, Math.min(dur || sec, sec));
+        updateLocalScrubBar(audio.currentTime, audio.duration);
       },
-      events: {
-        onReady: () => {
-          fitParentIframe();
-          try {
-            const data = player.getVideoData();
-            if (data && data.title) videoTitle = data.title;
-          } catch (e) {}
+      getCurrentTime: () => audio.currentTime || 0,
+      getDuration: () => (audio.duration && !isNaN(audio.duration)) ? audio.duration : 0,
+      setPlaybackRate: (rate) => { audio.playbackRate = rate; audio.preservesPitch = true; audio.mozPreservesPitch = true; audio.webkitPreservesPitch = true; },
+      getPlayerState: () => audio.ended ? YT.PlayerState.ENDED : (audio.paused ? YT.PlayerState.PAUSED : YT.PlayerState.PLAYING),
+      getVideoData: () => ({ title: localTitle || videoId })
+    };
 
-          if (hadCachedSync && cachedResumeTime !== null && cachedResumeTime > 0) {
-            updatePlaybackHighlight(cachedResumeTime, true);
-          } else if (hadCachedSync) {
-            updatePlaybackHighlight(0, true);
-          } else {
-            updatePlaybackHighlight(0, false);
-          }
-          setInterval(mainLoop, 100);
-        },
-        onStateChange: () => {
-          updatePlayButtonIcon();
-          try {
-            const data = player.getVideoData();
-            if (data && data.title) videoTitle = data.title;
-          } catch (e) {}
-        }
+    audio.addEventListener("play", updatePlayButtonIcon);
+    audio.addEventListener("pause", updatePlayButtonIcon);
+    audio.addEventListener("ended", () => {
+      updatePlayButtonIcon();
+      if (isRunning && !awaitingVas && !stepTransitionLock) {
+        if (vasEnabled) promptVasForCurrentStep(); else applyStep(currentStepIdx + 1);
       }
     });
-  };
+    audio.addEventListener("loadedmetadata", () => {
+      if (hadCachedSync && cachedResumeTime !== null && cachedResumeTime > 0 && cachedResumeTime < audio.duration) audio.currentTime = cachedResumeTime;
+      updateRangeUI(); updateLocalScrubBar(audio.currentTime, audio.duration); fitParentIframe();
+    });
+
+    let isScrubbing = false;
+    function scrubFromClientX(clientX) {
+      if (!trackEl || !audio.duration || isNaN(audio.duration)) return;
+      const rect = trackEl.getBoundingClientRect();
+      const targetT = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * audio.duration;
+      audio.currentTime = targetT;
+      updateLocalScrubBar(targetT, audio.duration);
+      updatePlaybackHighlight(targetT, true);
+    }
+
+    if (trackEl) {
+      trackEl.addEventListener("pointerdown", (e) => { if (isRunning) return; isScrubbing = true; trackEl.setPointerCapture(e.pointerId); scrubFromClientX(e.clientX); });
+      trackEl.addEventListener("pointermove", (e) => { if (isScrubbing) scrubFromClientX(e.clientX); });
+      trackEl.addEventListener("pointerup", () => { isScrubbing = false; });
+      trackEl.addEventListener("pointercancel", () => { isScrubbing = false; });
+    }
+    fitParentIframe();
+    setInterval(mainLoop, 100);
+  }
+
+  if (mediaMode === "local") {
+    initLocalAudioPlayer();
+  } else {
+    const tag = document.createElement("script");
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(tag);
+
+    window.onYouTubeIframeAPIReady = function() {
+      player = new YT.Player("yt-player", {
+        videoId: videoId,
+        playerVars: {
+          playsinline: 1, controls: 0, iv_load_policy: 3, cc_load_policy: 0, rel: 0, modestbranding: 1,
+          start: (hadCachedSync && cachedResumeTime !== null && cachedResumeTime > 0) ? Math.floor(cachedResumeTime) : 0
+        },
+        events: {
+          onReady: () => {
+            fitParentIframe();
+            try { const data = player.getVideoData(); if (data && data.title) videoTitle = data.title; } catch (e) {}
+            if (hadCachedSync && cachedResumeTime !== null && cachedResumeTime > 0) updatePlaybackHighlight(cachedResumeTime, true);
+            else if (hadCachedSync) updatePlaybackHighlight(0, true);
+            else updatePlaybackHighlight(0, false);
+            setInterval(mainLoop, 100);
+          },
+          onStateChange: () => {
+            updatePlayButtonIcon();
+            try { const data = player.getVideoData(); if (data && data.title) videoTitle = data.title; } catch (e) {}
+          }
+        }
+      });
+    };
+  }
 
   function findCaptionIndexAt(effectiveT) {
     let found = -1;
     for (let i = 0; i < captions.length; i++) {
-      if (effectiveT >= captions[i].start && effectiveT < captions[i].end) {
-        found = i;
-        break;
-      }
+      if (effectiveT >= captions[i].start && effectiveT < captions[i].end) { found = i; break; }
     }
     if (found === -1) {
       for (let i = captions.length - 1; i >= 0; i--) {
-        if (effectiveT >= captions[i].start) {
-          found = i;
-          break;
-        }
+        if (effectiveT >= captions[i].start) { found = i; break; }
       }
     }
     return found;
   }
 
   function updatePlaybackHighlight(t, forceScroll = false) {
+    if (!captions || captions.length === 0) return;
     if (!isSynced) {
       const found = findCaptionIndexAt(t);
       if (found !== previewCaptionIdx && found !== -1) {
-        if (previewCaptionIdx !== -1) {
-          document.getElementById("line-" + previewCaptionIdx)?.classList.remove("preview-active");
-        }
+        if (previewCaptionIdx !== -1) document.getElementById("line-" + previewCaptionIdx)?.classList.remove("preview-active");
         previewCaptionIdx = found;
         document.getElementById("line-" + previewCaptionIdx)?.classList.add("preview-active");
       }
       return;
     }
-
     const found = findCaptionIndexAt(t - timeOffset);
     if (found !== activeCaptionIdx && found !== -1) {
-      if (activeCaptionIdx !== -1) {
-        const prev = document.getElementById("line-" + activeCaptionIdx);
-        if (prev) prev.classList.remove("active");
-      }
+      if (activeCaptionIdx !== -1) document.getElementById("line-" + activeCaptionIdx)?.classList.remove("active");
       activeCaptionIdx = found;
       const cur = document.getElementById("line-" + activeCaptionIdx);
       if (cur) {
@@ -2463,6 +2653,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     const d = player.getDuration();
     const timeEl = document.getElementById("time-display");
     if (timeEl) timeEl.textContent = `${fmtTime(t)} / ${fmtTime(d)}`;
+    if (mediaMode === "local") updateLocalScrubBar(t, d);
 
     if (isSynced && !isRunning && player.getPlayerState() === YT.PlayerState.PLAYING) {
       const wholeSec = Math.floor(t);
@@ -2471,218 +2662,91 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         saveVideoSyncState(t);
       }
     }
-
     if (isRunning && !awaitingVas && !stepTransitionLock && player.getPlayerState() === YT.PlayerState.PLAYING) {
       if (t >= rangeEnd) {
-        if (vasEnabled) {
-          promptVasForCurrentStep();
-        } else {
-          applyStep(currentStepIdx + 1);
-        }
+        if (vasEnabled) promptVasForCurrentStep(); else applyStep(currentStepIdx + 1);
         return;
       }
     }
-
     updatePlaybackHighlight(t, false);
   }
 
-  function openPlotModal() {
-    document.getElementById("plot-modal").classList.add("open");
-    renderDarkVasPlot();
-  }
-
-  function closePlotModal() {
-    document.getElementById("plot-modal").classList.remove("open");
-  }
-
-  function clearTrialLogs() {
-    trialLogs = trialLogs.filter(r => r.VideoID !== videoId);
-    saveTrialLogs();
-    renderStepsList();
-    renderDarkVasPlot();
-  }
+  function openPlotModal() { document.getElementById("plot-modal").classList.add("open"); renderDarkVasPlot(); }
+  function closePlotModal() { document.getElementById("plot-modal").classList.remove("open"); }
+  function clearTrialLogs() { trialLogs = trialLogs.filter(r => r.VideoID !== videoId); saveTrialLogs(); renderStepsList(); renderDarkVasPlot(); }
 
   function renderDarkVasPlot() {
     const canvas = document.getElementById("vas-plot-canvas");
     const emptyMsg = document.getElementById("plot-empty-msg");
     const titleEl = document.getElementById("plot-modal-title");
     const rows = trialLogs.filter(r => r.VideoID === videoId);
-
     titleEl.textContent = `VAS Clarity & Speed — ${videoTitle} (${rows.length} trials)`;
-
-    if (rows.length === 0) {
-      canvas.style.display = "none";
-      emptyMsg.style.display = "block";
-      return;
-    }
-    canvas.style.display = "block";
-    emptyMsg.style.display = "none";
+    if (rows.length === 0) { canvas.style.display = "none"; emptyMsg.style.display = "block"; return; }
+    canvas.style.display = "block"; emptyMsg.style.display = "none";
 
     const ctx = canvas.getContext("2d");
-    const W = canvas.width;
-    const H = canvas.height;
+    const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
+    const bgCol = "#181818", clarityCol = "#ff00cc", speedCol = "#00d2ff", edgeCol = "#ffffff", axisCol = "#444444";
+    ctx.fillStyle = bgCol; ctx.fillRect(0, 0, W, H);
 
-    const bgCol = "#181818";
-    const clarityCol = "#ff00cc";
-    const speedCol = "#00d2ff";
-    const edgeCol = "#ffffff";
-    const axisCol = "#444444";
-    const gridCol = "#333333";
-    const gridMidCol = "#444444";
-    const tickLabelCol = "#aaaaaa";
-
-    ctx.fillStyle = bgCol;
-    ctx.fillRect(0, 0, W, H);
-
-    const padL = 82;
-    const padR = 82;
-    const padT = 56;
-    const padB = 52;
-    const plotW = W - padL - padR;
-    const plotH = H - padT - padB;
-
+    const padL = 82, padR = 82, padT = 56, padB = 52;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
     const yClarityToPx = (c) => padT + plotH * (1 - (c - (-5)) / (105 - (-5)));
     const ySpeedToPx = (s) => padT + plotH * (1 - (s - (-0.1)) / (2.1 - (-0.1)));
     const xIdxToPx = (i) => rows.length === 1 ? (padL + plotW / 2) : (padL + (plotW * i) / (rows.length - 1));
 
     ctx.font = "bold 14px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
     ctx.textBaseline = "middle";
-
-    ctx.fillStyle = clarityCol;
-    ctx.strokeStyle = edgeCol;
-    ctx.lineWidth = 2.0;
-    ctx.beginPath();
-    ctx.arc(padL + 10, 24, 5.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    ctx.fillStyle = clarityCol; ctx.strokeStyle = edgeCol; ctx.lineWidth = 2.0;
+    ctx.beginPath(); ctx.arc(padL + 10, 24, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillText("Subtitles ON", padL + 22, 24);
 
     const leg2X = padL + 175;
-    ctx.fillStyle = bgCol;
-    ctx.strokeStyle = edgeCol;
-    ctx.lineWidth = 2.0;
-    ctx.beginPath();
-    ctx.arc(leg2X, 24, 5.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = clarityCol;
-    ctx.fillText("Subtitles OFF", leg2X + 12, 24);
+    ctx.fillStyle = bgCol; ctx.beginPath(); ctx.arc(leg2X, 24, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = clarityCol; ctx.fillText("Subtitles OFF", leg2X + 12, 24);
 
     const leg3X = W - padR - 95;
-    ctx.fillStyle = speedCol;
-    ctx.fillRect(leg3X - 5, 24 - 5, 10, 10);
-    ctx.fillText("Speed", leg3X + 12, 24);
+    ctx.fillStyle = speedCol; ctx.fillRect(leg3X - 5, 19, 10, 10); ctx.fillText("Speed", leg3X + 12, 24);
 
     [0, 50, 100].forEach((val) => {
       const y = yClarityToPx(val);
-      ctx.save();
-      ctx.strokeStyle = val === 50 ? gridMidCol : gridCol;
-      ctx.lineWidth = 1.4;
-      ctx.setLineDash([6, 5]);
-      ctx.beginPath();
-      ctx.moveTo(padL, y);
-      ctx.lineTo(W - padR, y);
-      ctx.stroke();
-      ctx.restore();
+      ctx.save(); ctx.strokeStyle = val === 50 ? "#444444" : "#333333"; ctx.lineWidth = 1.4; ctx.setLineDash([6, 5]);
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke(); ctx.restore();
     });
 
-    ctx.strokeStyle = axisCol;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(padL, padT);
-    ctx.lineTo(padL, padT + plotH);
-    ctx.lineTo(W - padR, padT + plotH);
-    ctx.lineTo(W - padR, padT);
-    ctx.stroke();
+    ctx.strokeStyle = axisCol; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + plotH); ctx.lineTo(W - padR, padT + plotH); ctx.lineTo(W - padR, padT); ctx.stroke();
 
-    ctx.fillStyle = clarityCol;
-    ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
-    ctx.textAlign = "right";
-    [0, 50, 100].forEach((val) => {
-      ctx.fillText(`${val}%`, padL - 10, yClarityToPx(val));
-    });
-    ctx.save();
-    ctx.translate(22, padT + plotH / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = "center";
-    ctx.font = "bold 15px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
-    ctx.fillText("Clarity", 0, 0);
-    ctx.restore();
+    ctx.fillStyle = clarityCol; ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, Arial, sans-serif"; ctx.textAlign = "right";
+    [0, 50, 100].forEach((val) => ctx.fillText(`${val}%`, padL - 10, yClarityToPx(val)));
+    ctx.save(); ctx.translate(22, padT + plotH / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.font = "bold 15px -apple-system, BlinkMacSystemFont, Arial, sans-serif"; ctx.fillText("Clarity", 0, 0); ctx.restore();
 
-    ctx.fillStyle = speedCol;
-    ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
-    ctx.textAlign = "left";
-    [[0.0, "0x"], [1.0, "1.0x"], [2.0, "2.0x"]].forEach(([val, lbl]) => {
-      ctx.fillText(lbl, W - padR + 10, ySpeedToPx(val));
-    });
-    ctx.save();
-    ctx.translate(W - 22, padT + plotH / 2);
-    ctx.rotate(Math.PI / 2);
-    ctx.textAlign = "center";
-    ctx.font = "bold 15px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
-    ctx.fillText("Speed", 0, 0);
-    ctx.restore();
+    ctx.fillStyle = speedCol; ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, Arial, sans-serif"; ctx.textAlign = "left";
+    [[0.0, "0x"], [1.0, "1.0x"], [2.0, "2.0x"]].forEach(([val, lbl]) => ctx.fillText(lbl, W - padR + 10, ySpeedToPx(val)));
+    ctx.save(); ctx.translate(W - 22, padT + plotH / 2); ctx.rotate(Math.PI / 2); ctx.textAlign = "center"; ctx.font = "bold 15px -apple-system, BlinkMacSystemFont, Arial, sans-serif"; ctx.fillText("Speed", 0, 0); ctx.restore();
 
-    ctx.fillStyle = tickLabelCol;
-    ctx.font = "bold 12px -apple-system, BlinkMacSystemFont, Arial, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
+    ctx.fillStyle = "#aaaaaa"; ctx.font = "bold 12px -apple-system, BlinkMacSystemFont, Arial, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
     const labelStep = rows.length > 22 ? Math.ceil(rows.length / 18) : 1;
     rows.forEach((r, i) => {
       const x = xIdxToPx(i);
-      ctx.strokeStyle = axisCol;
-      ctx.beginPath();
-      ctx.moveTo(x, padT + plotH);
-      ctx.lineTo(x, padT + plotH + 5);
-      ctx.stroke();
-      if (i % labelStep === 0 || i === rows.length - 1) {
-        ctx.fillText(String(i + 1), x, padT + plotH + 9);
-      }
+      ctx.strokeStyle = axisCol; ctx.beginPath(); ctx.moveTo(x, padT + plotH); ctx.lineTo(x, padT + plotH + 5); ctx.stroke();
+      if (i % labelStep === 0 || i === rows.length - 1) ctx.fillText(String(i + 1), x, padT + plotH + 9);
     });
 
-    ctx.save();
-    ctx.strokeStyle = speedCol;
-    ctx.lineWidth = 2.5;
-    ctx.setLineDash([7, 5]);
-    ctx.beginPath();
-    rows.forEach((r, i) => {
-      const x = xIdxToPx(i);
-      const y = ySpeedToPx(r.PlaybackRate);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-    ctx.restore();
+    ctx.save(); ctx.strokeStyle = speedCol; ctx.lineWidth = 2.5; ctx.setLineDash([7, 5]);
+    ctx.beginPath(); rows.forEach((r, i) => { const x = xIdxToPx(i), y = ySpeedToPx(r.PlaybackRate); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }); ctx.stroke(); ctx.restore();
 
     ctx.fillStyle = speedCol;
-    rows.forEach((r, i) => {
-      const x = xIdxToPx(i);
-      const y = ySpeedToPx(r.PlaybackRate);
-      ctx.fillRect(x - 4.5, y - 4.5, 9, 9);
-    });
+    rows.forEach((r, i) => { const x = xIdxToPx(i), y = ySpeedToPx(r.PlaybackRate); ctx.fillRect(x - 4.5, y - 4.5, 9, 9); });
 
-    ctx.strokeStyle = clarityCol;
-    ctx.lineWidth = 3.2;
-    ctx.beginPath();
-    rows.forEach((r, i) => {
-      const x = xIdxToPx(i);
-      const y = yClarityToPx(r.VAS_Clarity);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+    ctx.strokeStyle = clarityCol; ctx.lineWidth = 3.2;
+    ctx.beginPath(); rows.forEach((r, i) => { const x = xIdxToPx(i), y = yClarityToPx(r.VAS_Clarity); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }); ctx.stroke();
 
     rows.forEach((r, i) => {
-      const x = xIdxToPx(i);
-      const y = yClarityToPx(r.VAS_Clarity);
-      ctx.beginPath();
-      ctx.arc(x, y, 6.2, 0, Math.PI * 2);
-      ctx.fillStyle = r.Subtitles ? clarityCol : bgCol;
-      ctx.strokeStyle = edgeCol;
-      ctx.lineWidth = 2.0;
-      ctx.fill();
-      ctx.stroke();
+      const x = xIdxToPx(i), y = yClarityToPx(r.VAS_Clarity);
+      ctx.beginPath(); ctx.arc(x, y, 6.2, 0, Math.PI * 2);
+      ctx.fillStyle = r.Subtitles ? clarityCol : bgCol; ctx.strokeStyle = edgeCol; ctx.lineWidth = 2.0; ctx.fill(); ctx.stroke();
     });
   }
 
@@ -2690,153 +2754,78 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     const canvas = document.getElementById("vas-plot-canvas");
     if (!canvas || canvas.style.display === "none") return;
     const safeTitle = (videoTitle || videoId).replace(/[^a-zA-Z0-9 _-]/g, "_").slice(0, 36).trim();
-    const link = document.createElement("a");
-    link.download = `ninja_${safeTitle}_${Date.now()}_plot.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
+    const link = document.createElement("a"); link.download = `ninja_${safeTitle}_${Date.now()}_plot.png`; link.href = canvas.toDataURL("image/png"); link.click();
   }
 
   function csvEscape(val) {
     const str = String(val ?? "");
-    if (/[",\n]/.test(str)) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
+    return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
   }
 
   function exportLogsCsv() {
     const rows = trialLogs.filter(r => r.VideoID === videoId);
     if (rows.length === 0) return;
-
-    const headers = [
-      "SubjectID", "Timestamp", "VideoID", "StartTime", "EndTime",
-      "StepIdx", "PlaybackRate", "Subtitles", "VAS_Clarity",
-      "URL", "Title", "Protocol"
-    ];
+    const headers = ["SubjectID", "Timestamp", "VideoID", "StartTime", "EndTime", "StepIdx", "PlaybackRate", "Subtitles", "VAS_Clarity", "URL", "Title", "Protocol"];
     const lines = [headers.join(",")];
     rows.forEach((r) => {
-      const vals = headers.map((h) => {
-        if (h === "Subtitles") return r.Subtitles ? "True" : "False";
-        if (h === "PlaybackRate") return Number(r.PlaybackRate).toFixed(1);
-        return csvEscape(r[h]);
-      });
-      lines.push(vals.join(","));
+      lines.push(headers.map((h) => h === "Subtitles" ? (r.Subtitles ? "True" : "False") : (h === "PlaybackRate" ? Number(r.PlaybackRate).toFixed(1) : csvEscape(r[h]))).join(","));
     });
-
     const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const safeTitle = (videoTitle || videoId).replace(/[^a-zA-Z0-9 _-]/g, "_").slice(0, 36).trim();
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ninja_${safeTitle}_${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const a = document.createElement("a"); a.href = url; a.download = `ninja_${safeTitle}_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(url);
   }
 
-  let draftSteps = [];
-  let editingCustomId = null;
+  let draftSteps = [], editingCustomId = null;
 
   function openModal(createNew = false) {
     if (isRunning) return;
     const nameInput = document.getElementById("custom-seq-name");
     const delBtn = document.getElementById("del-custom-btn");
-
     if (!createNew && customProtocols[selectedProtocolId]) {
-      editingCustomId = selectedProtocolId;
-      nameInput.value = customProtocols[selectedProtocolId].name;
-      delBtn.style.display = "inline-block";
+      editingCustomId = selectedProtocolId; nameInput.value = customProtocols[selectedProtocolId].name; delBtn.style.display = "inline-block";
     } else {
-      editingCustomId = null;
-      const baseName = getProtocolById(selectedProtocolId).name;
-      nameInput.value = createNew ? "Custom Sequence" : `${baseName} (Custom)`;
-      delBtn.style.display = "none";
+      editingCustomId = null; nameInput.value = createNew ? "Custom Sequence" : `${getProtocolById(selectedProtocolId).name} (Custom)`; delBtn.style.display = "none";
     }
-
     draftSteps = steps.map(s => ({ ...s }));
     renderModalBody();
     document.getElementById("cfg-modal").classList.add("open");
   }
 
-  function closeModal() {
-    document.getElementById("cfg-modal").classList.remove("open");
-  }
+  function closeModal() { document.getElementById("cfg-modal").classList.remove("open"); }
 
   function renderModalBody() {
     const body = document.getElementById("modal-steps-body");
     body.innerHTML = "";
     draftSteps.forEach((stItem, idx) => {
-      const r = document.createElement("div");
-      r.className = "edit-row";
-      r.innerHTML = `
-        <span>${idx + 1}</span>
-        <input type="number" step="0.1" min="0.25" max="2.0" value="${stItem.speed}"
-               onchange="draftSteps[${idx}].speed = parseFloat(this.value) || 1.0" />
-        <label><input type="checkbox" ${stItem.cc ? "checked" : ""}
-               onchange="draftSteps[${idx}].cc = this.checked" /> CC</label>
-        <div style="text-align:right;">
-          <button class="nudge-btn" onclick="moveDraft(${idx}, -1)">↑</button>
-          <button class="nudge-btn" onclick="moveDraft(${idx}, 1)">↓</button>
-          <button class="nudge-btn" onclick="delDraft(${idx})">✕</button>
-        </div>
-      `;
+      const r = document.createElement("div"); r.className = "edit-row";
+      r.innerHTML = `<span>${idx + 1}</span><input type="number" step="0.1" min="0.25" max="2.0" value="${stItem.speed}" onchange="draftSteps[${idx}].speed = parseFloat(this.value) || 1.0" /><label><input type="checkbox" ${stItem.cc ? "checked" : ""} onchange="draftSteps[${idx}].cc = this.checked" /> CC</label><div style="text-align:right;"><button class="nudge-btn" onclick="moveDraft(${idx}, -1)">↑</button><button class="nudge-btn" onclick="moveDraft(${idx}, 1)">↓</button><button class="nudge-btn" onclick="delDraft(${idx})">✕</button></div>`;
       body.appendChild(r);
     });
   }
 
-  function moveDraft(idx, dir) {
-    const target = idx + dir;
-    if (target < 0 || target >= draftSteps.length) return;
-    [draftSteps[idx], draftSteps[target]] = [draftSteps[target], draftSteps[idx]];
-    renderModalBody();
-  }
-
-  function delDraft(idx) {
-    draftSteps.splice(idx, 1);
-    renderModalBody();
-  }
-
-  function addStepRow() {
-    draftSteps.push({ speed: 1.0, cc: false });
-    renderModalBody();
-  }
-
-  function resetDraftToSelected() {
-    draftSteps = getProtocolById(selectedProtocolId).steps.map(s => ({ ...s }));
-    renderModalBody();
-  }
+  function moveDraft(idx, dir) { const t = idx + dir; if (t >= 0 && t < draftSteps.length) { [draftSteps[idx], draftSteps[t]] = [draftSteps[t], draftSteps[idx]]; renderModalBody(); } }
+  function delDraft(idx) { draftSteps.splice(idx, 1); renderModalBody(); }
+  function addStepRow() { draftSteps.push({ speed: 1.0, cc: false }); renderModalBody(); }
+  function resetDraftToSelected() { draftSteps = getProtocolById(selectedProtocolId).steps.map(s => ({ ...s })); renderModalBody(); }
 
   function saveModalSteps() {
     if (draftSteps.length === 0) return;
-    const rawName = document.getElementById("custom-seq-name").value.trim();
-    const seqName = rawName || "Custom Sequence";
+    const seqName = document.getElementById("custom-seq-name").value.trim() || "Custom Sequence";
     const targetId = editingCustomId || ("custom_" + Date.now());
-
-    customProtocols[targetId] = {
-      name: seqName,
-      shortKey: seqName.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
-      steps: draftSteps.map(s => ({ ...s }))
-    };
+    customProtocols[targetId] = { name: seqName, shortKey: seqName.toLowerCase().replace(/[^a-z0-9]+/g, "_"), steps: draftSteps.map(s => ({ ...s })) };
     saveCustomProtocols(customProtocols);
-
-    selectedProtocolId = targetId;
-    localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocolId);
+    selectedProtocolId = targetId; localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocolId);
     steps = customProtocols[targetId].steps.map(s => ({ ...s }));
-
-    renderProtocolDropdown();
-    renderStepsList();
-    closeModal();
+    renderProtocolDropdown(); renderStepsList(); closeModal();
   }
 
   function deleteCurrentCustomProtocol() {
     if (!editingCustomId || !customProtocols[editingCustomId]) return;
-    delete customProtocols[editingCustomId];
-    saveCustomProtocols(customProtocols);
-    selectedProtocolId = "anchor_06";
-    localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocolId);
+    delete customProtocols[editingCustomId]; saveCustomProtocols(customProtocols);
+    selectedProtocolId = "anchor_06"; localStorage.setItem(SELECTED_PROTOCOL_KEY, selectedProtocolId);
     steps = getProtocolById(selectedProtocolId).steps.map(s => ({ ...s }));
-    renderProtocolDropdown();
-    renderStepsList();
-    closeModal();
+    renderProtocolDropdown(); renderStepsList(); closeModal();
   }
 </script>
 </body>
@@ -2844,10 +2833,22 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 """
 
 
-def build_player_html(video_id: str, captions: list[dict], source_url: str) -> str:
+def build_player_html(
+    video_id: str,
+    captions: list[dict],
+    source_url: str,
+    media_mode: str = "youtube",
+    local_audio_uri: str = "",
+    local_title: str = "",
+    initial_synced: bool = False,
+) -> str:
     safe_captions = json.dumps(captions, ensure_ascii=False).replace("</", "<\\/")
     safe_vid = json.dumps(video_id).replace("</", "<\\/")
     safe_url = json.dumps(source_url, ensure_ascii=False).replace("</", "<\\/")
+    safe_mode = json.dumps(media_mode)
+    safe_audio_uri = json.dumps(local_audio_uri).replace("</", "<\\/")
+    safe_title = json.dumps(local_title, ensure_ascii=False).replace("</", "<\\/")
+    safe_init_synced = "true" if initial_synced else "false"
     shuriken_icon = get_ice_shuriken_img_tag(size_px=16, extra_class="ninja-spin-hover")
     shuriken_uri = f"data:image/png;base64,{_ICE_SHURIKEN_B64}" if _ICE_SHURIKEN_B64 else ""
     return (
@@ -2855,6 +2856,10 @@ def build_player_html(video_id: str, captions: list[dict], source_url: str) -> s
         .replace("__CAPTIONS_JSON__", safe_captions)
         .replace("__VIDEO_ID_JSON__", safe_vid)
         .replace("__SOURCE_URL_JSON__", safe_url)
+        .replace("__MEDIA_MODE_JSON__", safe_mode)
+        .replace("__LOCAL_AUDIO_URI_JSON__", safe_audio_uri)
+        .replace("__LOCAL_TITLE_JSON__", safe_title)
+        .replace("__INITIAL_SYNCED_JSON__", safe_init_synced)
         .replace("__RUN_SEQ_SHURIKEN__", shuriken_icon)
         .replace("__SHURIKEN_DATA_URI__", shuriken_uri)
     )
@@ -2865,7 +2870,7 @@ def render_ninja_listening() -> None:
         """
         <style>
         div[data-testid="stTextInput"] {
-            margin-bottom: -0.45rem !important;
+            margin-bottom: -0.35rem !important;
         }
         iframe {
             display: block;
@@ -2876,13 +2881,15 @@ def render_ninja_listening() -> None:
         unsafe_allow_html=True,
     )
 
+    if "ninja_local_whisper_cache" not in st.session_state:
+        st.session_state["ninja_local_whisper_cache"] = {}
+
     default_v = (
         st.query_params.get("v", "")
         or st.session_state.get("ninja_last_video_id", "")
     )
 
-    # Restore the current browser's own last video from localStorage if ?v= is empty
-    if not default_v:
+    if not default_v and not st.session_state.get("ninja_local_audio_input"):
         components.html(
             """
             <script>
@@ -2912,6 +2919,102 @@ def render_ninja_listening() -> None:
         key="ninja_listening_url_input",
     )
 
+    st.markdown(
+        """
+        <div id="ninja-or-divider" style="display:flex;align-items:center;gap:16px;margin:20px 0 26px 0;">
+          <div style="flex:1;height:2px;background:#334155;"></div>
+          <span style="font-size:28px;font-weight:900;letter-spacing:0.15em;color:#f8fafc;background:#1e293b;padding:4px 22px;border:2px solid #38bdf8;border-radius:999px;line-height:1.1;">OR</span>
+          <div style="flex:1;height:2px;background:#334155;"></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    loc_col1, loc_col2 = st.columns([1.45, 1.0])
+    with loc_col1:
+        local_audio_file = st.file_uploader(
+            "Local audio file (WAV / MP3 / M4A / OGG / FLAC)",
+            type=["wav", "mp3", "m4a", "ogg", "flac"],
+            key="ninja_local_audio_input",
+        )
+    with loc_col2:
+        local_srt_file = st.file_uploader(
+            "Subtitle file (.srt, optional)",
+            type=["srt"],
+            key="ninja_local_srt_input",
+        )
+
+    # Mode A: Local Audio File
+    if local_audio_file is not None:
+        audio_bytes = local_audio_file.getvalue()
+        audio_hash = hashlib.sha256(audio_bytes).hexdigest()[:12]
+        local_id = f"local_{audio_hash}"
+        mime = _detect_audio_mime(local_audio_file.name)
+        audio_data_uri = f"data:{mime};base64,{base64.b64encode(audio_bytes).decode('ascii')}"
+
+        captions: list[dict] = []
+        caption_source = ""
+
+        if local_srt_file is not None:
+            try:
+                raw_srt = local_srt_file.getvalue().decode("utf-8", errors="replace")
+                captions = parse_srt_text(raw_srt)
+                caption_source = f"SRT: {local_srt_file.name} ({len(captions)} lines)"
+            except Exception as e:
+                st.warning(f"SRTの読み込みに失敗しました: {e}")
+        elif local_id in st.session_state["ninja_local_whisper_cache"]:
+            captions = st.session_state["ninja_local_whisper_cache"][local_id]
+            caption_source = f"Whisper 字幕 ({len(captions)} lines)"
+
+        if not captions:
+            backend_id, backend_label = get_available_whisper_backend()
+            if backend_id:
+                w_col1, w_col2 = st.columns([2.0, 2.5], vertical_alignment="center")
+                with w_col1:
+                    if st.button(
+                        f"音声から字幕を自動生成 ({backend_label})",
+                        key=f"whisper_btn_{local_id}",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        if len(audio_bytes) > 24 * 1024 * 1024 and backend_id in ("groq", "openai"):
+                            st.error("API上限 (25MB) を超えています。MP3/M4A へ圧縮するか短い区間を使用してください。")
+                        else:
+                            try:
+                                with st.spinner(f"{backend_label} で文字起こし中..."):
+                                    gen_caps, _ = transcribe_audio_hybrid(audio_bytes, local_audio_file.name)
+                                if gen_caps:
+                                    st.session_state["ninja_local_whisper_cache"][local_id] = gen_caps
+                                    st.rerun()
+                                else:
+                                    st.warning("音声からテキストを検出できませんでした。")
+                            except urllib.error.HTTPError as e:
+                                err_body = e.read().decode("utf-8", errors="replace")
+                                st.error(f"Whisper API Error (HTTP {e.code}): {err_body}")
+                            except Exception as e:
+                                st.error(f"文字起こしに失敗しました: {e}")
+                with w_col2:
+                    st.caption("※ 字幕なしのまま下の水平バー＆Mark start/end でトレーニングすることも可能です。")
+            else:
+                st.caption("💡 字幕を付けるには `.srt` を選択するか、Secrets に `GROQ_API_KEY` / `OPENAI_API_KEY`（またはローカル `faster-whisper`）を設定してください。")
+        else:
+            st.caption(f"✅ {caption_source}")
+
+        components.html(
+            build_player_html(
+                video_id=local_id,
+                captions=captions,
+                source_url=f"local://{local_audio_file.name}",
+                media_mode="local",
+                local_audio_uri=audio_data_uri,
+                local_title=local_audio_file.name,
+                initial_synced=True,
+            ),
+            height=680,
+            scrolling=False,
+        )
+        return
+
+    # Mode B: YouTube URL
     if url:
         vid = extract_video_id(url)
         if not vid:
@@ -2934,7 +3037,13 @@ def render_ninja_listening() -> None:
                 return
 
         components.html(
-            build_player_html(vid, captions, url.strip()),
+            build_player_html(
+                video_id=vid,
+                captions=captions,
+                source_url=url.strip(),
+                media_mode="youtube",
+                initial_synced=False,
+            ),
             height=680,
             scrolling=False,
         )
